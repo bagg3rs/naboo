@@ -3,8 +3,6 @@ layout: home
 title: Naboo
 ---
 
-# Naboo
-
 > *"If I only had a brain…"*
 
 Naboo is a family AI robot. She started life as a stock [mBot2](https://www.makeblock.com/pages/mbot2-steam-educational-robot-kit) — plastic wheels, sensors, a bit of pre-programmed wiggling. Then we gave her a brain.

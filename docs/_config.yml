@@ -4,10 +4,6 @@ description: "A family AI robot — from stock mBot2 to physical AI agent"
 baseurl: "/naboo"
 url: "https://bagg3rs.github.io"
 
-nav:
-  - title: Home
-    url: /
-  - title: The Build
-    url: /build/
-  - title: Repo
-    url: https://github.com/bagg3rs/naboo
+header_pages:
+  - 01-stock-robot.md
+  - 02-adding-a-brain.md
