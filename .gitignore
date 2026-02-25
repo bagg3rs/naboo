@@ -1,0 +1,48 @@
+# Environment & secrets
+.env
+.env.*
+!.env.example
+secrets.env
+
+# AWS IoT certificates — NEVER commit these
+infra/certs/*.pem
+infra/certs/*.key
+infra/certs/*.crt
+!infra/certs/.gitkeep
+!infra/certs/AmazonRootCA1.pem
+
+# Terraform state (contains secrets)
+infra/terraform/terraform.tfstate
+infra/terraform/terraform.tfstate.backup
+infra/terraform/*.tfstate.*
+infra/terraform/terraform.tfvars
+infra/terraform/.terraform/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.venv/
+venv/
+
+# Runtime data — sessions are private and too large for git
+data/sessions/
+data/*.db
+data/cost_tracker.json
+
+# Memory — session logs and local family profiles are private
+naboo/memory/sessions/
+naboo/memory/family/*.local.md
+
+# Debug images
+vision/debug_images/
+debug_images/
+
+# Node / build
+node_modules/
+_site/
+.jekyll-cache/
+
+# macOS
+.DS_Store
