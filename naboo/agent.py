@@ -74,38 +74,55 @@ def _clean_response(text: str) -> str:
     """
     Strip Strands tool narration from agent responses and extract clean text.
 
-    Strands may produce:
-      - [Use robot_speak "hello"] — bracket annotation format
-      - robot_speak {"text": "hello"} — inline tool call format
+    Strands / local models may produce:
+      - robot_speak("2 plus 2 is 4!")         ← plain string arg
+      - robot_speak({"text": "..."})           ← JSON arg with parens
+      - robot_speak {"text": "..."}            ← JSON arg without parens
+      - [Use robot_speak "hello"]              ← bracket annotation format
       - A plain conversational response (ideal)
     """
     import re
     import json as _json
 
-    # If the whole response looks like a tool call with JSON arg, extract the text
-    # e.g. robot_speak {"text": "2 plus 2 is 4."}
-    tool_json_match = re.match(r'^\w+\s+(\{.+\})\s*$', text.strip(), re.DOTALL)
-    if tool_json_match:
+    text = text.strip()
+
+    # ── 1. Full-response tool call: extract inner text ─────────────────────
+    # Matches any of:  word("string")  word({"text":"..."})  word {"text":"..."}
+    # Only applies when the ENTIRE response is a tool call
+
+    # Plain string arg: robot_speak("Hello!")  or  robot_speak('Hello!')
+    plain_str = re.match(r'^\w+\(["\'](.+?)["\']\)\s*$', text, re.DOTALL)
+    if plain_str:
+        return plain_str.group(1).strip()
+
+    # JSON arg with or without parens: robot_speak({"text":"..."})
+    json_arg = re.match(r'^\w+[\s(]+(\{.+\})[)\s]*$', text, re.DOTALL)
+    if json_arg:
         try:
-            data = _json.loads(tool_json_match.group(1))
+            data = _json.loads(json_arg.group(1))
             extracted = data.get("text") or data.get("message") or data.get("response")
             if extracted:
                 return extracted.strip()
         except Exception:
             pass
 
-    # Remove tool call annotations: [Use tool_name "..."] or [Use tool_name ...]
+    # ── 2. Inline tool calls mixed with normal text ────────────────────────
+    # Remove bracket annotations: [Use robot_speak "..."] or [Use tool_name ...]
     text = re.sub(r'\[Use \w+[^\]]*\]', '', text)
-    # Remove inline tool calls: tool_name {"text": "..."}  (at start of line)
-    text = re.sub(r'^\w+\s+\{[^}]+\}\s*', '', text, flags=re.MULTILINE)
-    # Remove leading/trailing quotes that sometimes wrap the response
+    # Remove tool call lines: robot_speak("...") or robot_speak({"text":"..."}) at line start
+    text = re.sub(r'^\w+\([^)]+\)\s*\n?', '', text, flags=re.MULTILINE)
+    # Remove tool JSON without parens: robot_speak {"text":"..."} at line start
+    text = re.sub(r'^\w+[\s(]+\{[^}]+\}[)\s]*\n?', '', text, flags=re.MULTILINE)
+    # Remove leading/trailing quotes
     text = text.strip().strip('"')
-    # Strip trailing meta-commentary ("How's that?", "Is that helpful?", etc.)
+
+    # ── 3. Strip trailing meta-commentary ─────────────────────────────────
     text = re.sub(
         r'\s*(How\'?s that( for (a|an) \w+)?|Is that helpful|Does that help|Hope that helps|Hope this helps|I found this information by[^.]*)[!?.]*\s*$',
         '', text, flags=re.IGNORECASE
     )
-    # Collapse multiple newlines
+
+    # ── 4. Collapse whitespace ─────────────────────────────────────────────
     text = re.sub(r'\n{3,}', '\n\n', text)
     return text.strip()
 
@@ -167,7 +184,23 @@ class NabooAgent:
 
     def _connect_mqtt(self) -> mqtt.Client:
         """Connect to MQTT broker (local or AWS IoT Core)."""
-        client = mqtt.Client(client_id=f"naboo-agent-{IOT_THING_NAME}")
+        import uuid as _uuid
+        client = mqtt.Client(
+            mqtt.CallbackAPIVersion.VERSION2,
+            client_id=f"naboo-agent-{_uuid.uuid4().hex[:8]}",
+            clean_session=True,
+        )
+
+        def _on_connect(c, userdata, flags, reason_code, properties):
+            if reason_code.is_failure:
+                logger.error(f"MQTT connect failed: {reason_code}")
+                return
+            logger.info(f"MQTT connected. Subscribing to {QUESTION_TOPIC}")
+            c.subscribe(QUESTION_TOPIC, qos=1)
+            logger.info(f"Subscribed to {QUESTION_TOPIC}")
+
+        client.on_connect = _on_connect
+        client.on_message = self._on_message
 
         if IOT_ENDPOINT and IOT_CERT_PATH and Path(IOT_CERT_PATH).exists():
             # AWS IoT Core — TLS with device certificate
@@ -183,10 +216,7 @@ class NabooAgent:
             logger.info(f"Connecting to local MQTT: {MQTT_HOST}:{MQTT_PORT}")
             client.connect(MQTT_HOST, MQTT_PORT, 60)
 
-        client.on_message = self._on_message
-        client.subscribe(QUESTION_TOPIC)
         client.loop_start()
-        logger.info(f"Subscribed to {QUESTION_TOPIC}")
         return client
 
     def _on_message(self, client, userdata, msg):

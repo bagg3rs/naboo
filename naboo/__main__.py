@@ -5,15 +5,26 @@ Run with:
 
 import asyncio
 import logging
+import os
 import signal
 import sys
+from pathlib import Path
 from naboo.agent import NabooAgent
 
 
 def main():
+    # Log to both console and file (/tmp/naboo.log for easy inspection)
+    log_file = os.getenv("NABOO_LOG_FILE", "/tmp/naboo.log")
+    handlers: list[logging.Handler] = [logging.StreamHandler(sys.stdout)]
+    if log_file:
+        Path(log_file).parent.mkdir(parents=True, exist_ok=True)
+        handlers.append(logging.FileHandler(log_file))
+
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        handlers=handlers,
+        force=True,
     )
     logger = logging.getLogger("naboo")
     logger.info("Starting Naboo...")

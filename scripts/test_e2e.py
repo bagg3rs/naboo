@@ -4,8 +4,9 @@ import paho.mqtt.client as mqtt
 import time
 import json
 import sys
+import os
 
-BROKER = "192.168.0.170"
+BROKER = os.getenv("MQTT_BROKER", "192.168.0.50")   # Mac mini — new broker
 Q_TOPIC = "naboo/questions"
 A_TOPIC = "naboo/answers"
 
@@ -21,7 +22,8 @@ def on_connect(c, u, f, reason, props):
 def on_message(c, u, msg):
     payload = json.loads(msg.payload)
     answers.append(payload)
-    print(f"\n✓ ANSWER: {payload.get('text', msg.payload.decode())[:300]}\n")
+    text = payload.get('response') or payload.get('text') or msg.payload.decode()
+    print(f"\n✓ ANSWER: {json.dumps(payload)}\n")
 
 c = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
 c.on_connect = on_connect
@@ -40,7 +42,11 @@ if not connected:
 
 question = sys.argv[1] if len(sys.argv) > 1 else "hello Naboo, what is Arsenal?"
 print(f"Sending: {question!r}")
-c.publish(Q_TOPIC, json.dumps({"text": question, "user": "test"}))
+c.publish(Q_TOPIC, json.dumps({
+    "text": question,
+    "user": "test",
+    "conversation_id": f"test-{int(time.time())}",
+}))
 
 print("Waiting up to 20s for answer...")
 for _ in range(20):

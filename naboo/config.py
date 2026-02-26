@@ -120,12 +120,20 @@ def build_model_router() -> ModelRouter:
         }
     )
 
-    logger.info(
-        f"Model router built: "
-        f"SIMPLE={OLLAMA_MODEL_S1}@{OLLAMA_HOST}, "
-        f"MODERATE={OLLAMA_MODEL_S2}@{OLLAMA_HOST}, "
-        f"COMPLEX/CURRENT_INFO=Bedrock/{BEDROCK_MODEL_ID}"
-    )
+    if use_mlx:
+        logger.info(
+            f"Model router built (MLX): "
+            f"SIMPLE={MLX_MODEL_S1}@{MLX_HOST}, "
+            f"MODERATE={MLX_MODEL_S2}@{MLX_HOST}, "
+            f"COMPLEX/CURRENT_INFO=Bedrock/{BEDROCK_MODEL_ID}"
+        )
+    else:
+        logger.info(
+            f"Model router built (Ollama): "
+            f"SIMPLE={OLLAMA_MODEL_S1}@{OLLAMA_HOST}, "
+            f"MODERATE={OLLAMA_MODEL_S2}@{OLLAMA_HOST}, "
+            f"COMPLEX/CURRENT_INFO=Bedrock/{BEDROCK_MODEL_ID}"
+        )
 
     return router
 
