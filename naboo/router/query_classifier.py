@@ -98,9 +98,10 @@ class QueryClassifier:
     ]
 
     # Tool-backed queries — route to SIMPLE (3b) since the tool does the work
+    # NOTE: only include queries where data can be pre-fetched cleanly.
+    # Search/sports queries stay on CURRENT_INFO (7b handles search results better).
     TOOL_BACKED_PATTERNS = [
         r'\b(weather|forecast|temperature|rain|sunny|cloudy|windy)\b',
-        r'\b(score|result|match|game|won|lost|playing)\b',
     ]
     
     def __init__(

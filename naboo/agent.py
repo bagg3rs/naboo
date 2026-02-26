@@ -187,9 +187,9 @@ class NabooAgent:
         """
         import re
         q = question.lower()
+        # ── Weather pre-fetch ─────────────────────────────────────────────────
         if re.search(r'\b(weather|forecast|temperature|rain|sunny|cloudy|windy)\b', q):
-            # Extract location or default to London
-            location_match = re.search(r'\bin\s+([A-Za-z ]+?)(?:\s+today|\s+now|\?|$)', question, re.IGNORECASE)
+            location_match = re.search(r'\bin\s+([A-Za-z ]+?)(?:\s+today|\s+now|\s+tomorrow|\?|$)', question, re.IGNORECASE)
             location = location_match.group(1).strip() if location_match else "London"
             try:
                 from naboo.tools.strands_tools import get_weather
@@ -199,6 +199,19 @@ class NabooAgent:
                 return enriched, True
             except Exception as e:
                 logger.warning(f"Weather pre-fetch failed: {e}")
+        # ── Football fixture pre-fetch ────────────────────────────────────────
+        if re.search(r'\b(arsenal|chelsea|liverpool|tottenham|man united|man city)\b', q) and \
+           re.search(r'\b(next|playing|fixtures?|schedule|match|game|when)\b', q):
+            try:
+                from naboo.tools.strands_tools import web_search
+                team_match = re.search(r'\b(arsenal|chelsea|liverpool|tottenham|man united|man city)\b', q)
+                team = team_match.group(1).title() if team_match else "Arsenal"
+                search_result = web_search(f"{team} next Premier League fixture 2025-26")
+                enriched = f"{question}\n\n[Search results: {search_result}]"
+                logger.info(f"Pre-fetched fixture info for {team}")
+                return enriched, True
+            except Exception as e:
+                logger.warning(f"Fixture pre-fetch failed: {e}")
         return question, False
 
     def _build_strands_agent(self, question: str, no_tools: bool = False) -> Agent:
