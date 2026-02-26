@@ -1,12 +1,12 @@
 # Naboo's Memory System
 
-Naboo wakes up fresh each session. These files are her continuity.
+Naboo wakes up fresh each session. These files are their continuity.
 
 ## How It Works
 
 ### On startup
 The agent loads:
-1. `family/ziggy.md` and `family/lev.md` — who she knows
+1. `family/ziggy.md` and `family/lev.md` — who they know
 2. `sessions/YYYY-MM-DD.md` for the last 7 days — what happened recently
 3. `MEMORY.md` — curated long-term memory
 
@@ -57,7 +57,7 @@ grandparent names, favourite foods, current obsessions, recent events.
 The memory loader automatically prefers `.local.md` over the base file when it exists.
 
 This means the repo stays clean and shareable, while Naboo on your actual hardware
-knows everything she needs to know about your family.
+knows everything they need to know about your family.
 
 ---
 

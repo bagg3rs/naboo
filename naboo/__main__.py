@@ -24,7 +24,7 @@ def main():
     asyncio.set_event_loop(loop)
 
     def _shutdown(sig, frame):
-        logger.info(f"Received {sig.name}, shutting down...")
+        logger.info(f"Signal {sig} received, shutting down...")
         loop.create_task(agent.stop())
 
     signal.signal(signal.SIGINT, _shutdown)

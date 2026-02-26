@@ -2,7 +2,7 @@
 
 > *"If I only had a brain…"*
 
-Naboo is a family AI robot. She started life as a stock [mBot2](https://www.makeblock.com/pages/mbot2-steam-educational-robot-kit) — plastic wheels, ultrasonic sensors, a bit of pre-programmed wiggling. Then we gave her a brain.
+Naboo is a family AI robot. They started life as a stock [mBot2](https://www.makeblock.com/pages/mbot2-steam-educational-robot-kit) — plastic wheels, ultrasonic sensors, a bit of pre-programmed wiggling. Then we gave them a brain.
 
 This repo documents the journey from **stock robot** to **physical AI agent**: natural language understanding, voice responses, camera vision, autonomous navigation, and a personality the kids genuinely love.
 

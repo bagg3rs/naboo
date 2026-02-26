@@ -144,7 +144,7 @@ The family profiles use a public/private split: the repo contains sanitised temp
 
 ## The Conversation
 
-The first time Ziggy asked "do you remember me?" after the memory system was wired up, Naboo said yes. She knew his name. She knew Arsenal were his team. She knew gold was his favourite colour.
+The first time Ziggy asked "do you remember me?" after the memory system was wired up, Naboo said yes. They knew his name. They knew Arsenal were his team. They knew gold was his favourite colour.
 
 It was a small thing technically. A few markdown files, some file reads at startup, a string appended to a system prompt.
 
