@@ -88,16 +88,19 @@ class QueryClassifier:
     # Patterns for current information queries (real-time/up-to-date info)
     CURRENT_INFO_PATTERNS = [
         # Temporal keywords
-        r'\b(latest|recent|current|today|now|this week|this month|this year)\b',
+        r'\b(latest|recent|current|this week|this month|this year)\b',
         # News and updates
         r'\b(news|update|announcement|release|launched|announced)\b',
         # Prices and availability
         r'\b(price|cost|availability|stock|in stock|out of stock)\b',
-        # Weather and scores
-        r'\b(weather|forecast|temperature|rain|sunny)\b',
-        r'\b(score|result|match|game|won|lost|playing)\b',
         # Current events
         r'\b(what\'s happening|what is happening|what happened)\b',
+    ]
+
+    # Tool-backed queries — route to SIMPLE (3b) since the tool does the work
+    TOOL_BACKED_PATTERNS = [
+        r'\b(weather|forecast|temperature|rain|sunny|cloudy|windy)\b',
+        r'\b(score|result|match|game|won|lost|playing)\b',
     ]
     
     def __init__(
@@ -120,6 +123,7 @@ class QueryClassifier:
         self._greeting_regex = [re.compile(p, re.IGNORECASE) for p in self.GREETING_PATTERNS]
         self._simple_fact_regex = [re.compile(p, re.IGNORECASE) for p in self.SIMPLE_FACT_PATTERNS]
         self._simple_command_regex = [re.compile(p, re.IGNORECASE) for p in self.SIMPLE_COMMAND_PATTERNS]
+        self._tool_backed_regex = [re.compile(p, re.IGNORECASE) for p in self.TOOL_BACKED_PATTERNS]
         self._moderate_regex = [re.compile(p, re.IGNORECASE) for p in self.MODERATE_PATTERNS]
         self._complex_regex = [re.compile(p, re.IGNORECASE) for p in self.COMPLEX_PATTERNS]
         
@@ -154,6 +158,14 @@ class QueryClassifier:
         # Count sentences (rough heuristic)
         sentence_count = len([s for s in query.split('.') if s.strip()])
         
+        # Tool-backed queries: route to SIMPLE (3b) — the tool fetches the data,
+        # the model just needs to format a sentence. Must check before CURRENT_INFO.
+        for pattern in self._tool_backed_regex:
+            if pattern.search(query_lower):
+                complexity = QueryComplexity.SIMPLE
+                self.cache_classification(query, complexity)
+                return complexity
+
         # Check for current info patterns FIRST (highest priority for web grounding)
         if self.needs_current_info(query):
             complexity = QueryComplexity.CURRENT_INFO
