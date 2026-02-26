@@ -32,7 +32,7 @@ class ModelConfig:
     
     def __post_init__(self):
         """Validate configuration."""
-        if self.provider not in ["bedrock", "openai", "anthropic", "gemini", "ollama"]:
+        if self.provider not in ["bedrock", "openai", "anthropic", "gemini", "ollama", "mlx"]:
             raise ValueError(f"Invalid provider: {self.provider}")
         
         if self.cost_per_1k_input_tokens < 0 or self.cost_per_1k_output_tokens < 0:
@@ -331,6 +331,19 @@ class ModelRouter:
                 host=config.host or "http://localhost:11434",
                 model_id=config.model_id,
                 max_tokens=config.max_tokens,
+            )
+
+        elif config.provider == "mlx":
+            # MLX-LM server — OpenAI-compatible API, native Metal acceleration
+            from strands.models.openai import OpenAIModel
+
+            host = config.host or "http://localhost:11435"
+            logger.info(f"Creating MLX model: {config.model_id} at {host}")
+
+            return OpenAIModel(
+                model_id=config.model_id,
+                client_args={"base_url": f"{host}/v1", "api_key": "local"},
+                params={"max_tokens": config.max_tokens},
             )
         
         elif config.provider == "openai":

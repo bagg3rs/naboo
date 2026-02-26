@@ -13,6 +13,7 @@ dependencies = [
     "ollama>=0.4.0",
     "amqtt>=0.11.3",
     "ddgs>=9.10.0",
+    "openai>=2.24.0",
 ]
 
 [project.scripts]

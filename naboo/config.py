@@ -22,6 +22,12 @@ OLLAMA_HOST     = os.getenv("OLLAMA_HOST", "http://192.168.0.50:11434")
 OLLAMA_MODEL_S1 = os.getenv("OLLAMA_MODEL_S1", "qwen2.5:3b")   # ~1-2s
 OLLAMA_MODEL_S2 = os.getenv("OLLAMA_MODEL_S2", "qwen2.5:7b")   # ~5-6s
 
+# ── MLX (optional — native Metal, faster on Apple Silicon) ──────────────────
+# Set MLX_HOST to use MLX-LM server instead of Ollama (same models, ~3x faster)
+MLX_HOST        = os.getenv("MLX_HOST", "")   # e.g. http://192.168.0.50:11435
+MLX_MODEL_S1    = os.getenv("MLX_MODEL_S1", "mlx-community/Qwen2.5-3B-Instruct-4bit")
+MLX_MODEL_S2    = os.getenv("MLX_MODEL_S2", "mlx-community/Qwen2.5-7B-Instruct-4bit")
+
 # ── Bedrock fallback ────────────────────────────────────────────────────────
 BEDROCK_REGION   = os.getenv("BEDROCK_REGION", "eu-west-2")
 BEDROCK_MODEL_ID = os.getenv("BEDROCK_MODEL_ID", "eu.anthropic.claude-haiku-4-5-20251001-v1:0")
@@ -43,33 +49,60 @@ def build_model_router() -> ModelRouter:
     """
     Build the 3-tier model router.
 
-    Tier 1 (SIMPLE):   Ollama qwen2.5:3b  — fast local, ~1-2s
-    Tier 2 (MODERATE): Ollama qwen2.5:7b  — smart local, ~5-6s
-    Tier 3 (COMPLEX):  AWS Bedrock Claude — cloud fallback, ~4-6s
-    CURRENT_INFO:      Bedrock (web search capable)
+    With MLX_HOST set (recommended on Mac mini M4):
+      Tier 1 (SIMPLE):   MLX qwen2.5:3b  — ~1-2s (native Metal)
+      Tier 2 (MODERATE): MLX qwen2.5:7b  — ~3s (3x faster than Ollama!)
+
+    Without MLX_HOST (Ollama fallback):
+      Tier 1 (SIMPLE):   Ollama qwen2.5:3b  — ~2-3s
+      Tier 2 (MODERATE): Ollama qwen2.5:7b  — ~8-10s
+
+    Tier 3 (COMPLEX/CURRENT_INFO): AWS Bedrock Claude — cloud fallback
     """
+    use_mlx = bool(MLX_HOST)
 
-    s1 = ModelConfig(
-        provider="ollama",
-        model_id=OLLAMA_MODEL_S1,
-        host=OLLAMA_HOST,
-        cost_per_1k_input_tokens=0.0,
-        cost_per_1k_output_tokens=0.0,
-        max_tokens=500,
-        supports_streaming=True,
-        supports_vision=False,
-    )
-
-    s2 = ModelConfig(
-        provider="ollama",
-        model_id=OLLAMA_MODEL_S2,
-        host=OLLAMA_HOST,
-        cost_per_1k_input_tokens=0.0,
-        cost_per_1k_output_tokens=0.0,
-        max_tokens=1000,
-        supports_streaming=True,
-        supports_vision=False,
-    )
+    if use_mlx:
+        s1 = ModelConfig(
+            provider="mlx",
+            model_id=MLX_MODEL_S1,
+            host=MLX_HOST,
+            cost_per_1k_input_tokens=0.0,
+            cost_per_1k_output_tokens=0.0,
+            max_tokens=500,
+            supports_streaming=False,
+            supports_vision=False,
+        )
+        s2 = ModelConfig(
+            provider="mlx",
+            model_id=MLX_MODEL_S2,
+            host=MLX_HOST,
+            cost_per_1k_input_tokens=0.0,
+            cost_per_1k_output_tokens=0.0,
+            max_tokens=1000,
+            supports_streaming=False,
+            supports_vision=False,
+        )
+    else:
+        s1 = ModelConfig(
+            provider="ollama",
+            model_id=OLLAMA_MODEL_S1,
+            host=OLLAMA_HOST,
+            cost_per_1k_input_tokens=0.0,
+            cost_per_1k_output_tokens=0.0,
+            max_tokens=500,
+            supports_streaming=True,
+            supports_vision=False,
+        )
+        s2 = ModelConfig(
+            provider="ollama",
+            model_id=OLLAMA_MODEL_S2,
+            host=OLLAMA_HOST,
+            cost_per_1k_input_tokens=0.0,
+            cost_per_1k_output_tokens=0.0,
+            max_tokens=1000,
+            supports_streaming=True,
+            supports_vision=False,
+        )
 
     bedrock = create_bedrock_config_from_env(
         model_id_env_var="BEDROCK_MODEL_ID",
