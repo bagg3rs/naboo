@@ -70,6 +70,23 @@ def _load_system_prompt() -> str:
     return base_prompt
 
 
+def _clean_response(text: str) -> str:
+    """
+    Strip Strands tool narration from agent responses.
+
+    Strands includes lines like '[Use robot_speak "hello"]' in the response text.
+    Home Assistant only needs the final conversational text, not the tool trace.
+    """
+    import re
+    # Remove tool call annotations: [Use tool_name "..."] or [Use tool_name ...]
+    text = re.sub(r'\[Use \w+[^\]]*\]', '', text)
+    # Remove leading/trailing quotes that sometimes wrap the response
+    text = text.strip().strip('"')
+    # Collapse multiple spaces/newlines
+    text = re.sub(r'\n{3,}', '\n\n', text)
+    return text.strip()
+
+
 class NabooAgent:
     """
     Naboo Q&A agent.
@@ -88,6 +105,7 @@ class NabooAgent:
         self.system_prompt = _load_system_prompt()
 
         self._mqtt: Optional[mqtt.Client] = None
+        self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._running = False
         self._question_queue: asyncio.Queue = asyncio.Queue()
         self._session_messages: list = []
@@ -124,10 +142,12 @@ class NabooAgent:
             payload = json.loads(msg.payload.decode())
             question = payload.get("text") or payload.get("question") or str(payload)
             user = payload.get("user", "unknown")
-            asyncio.get_event_loop().call_soon_threadsafe(
-                self._question_queue.put_nowait,
-                {"question": question, "user": user}
-            )
+            # Use stored loop reference — paho runs callbacks in its own thread
+            if self._loop:
+                self._loop.call_soon_threadsafe(
+                    self._question_queue.put_nowait,
+                    {"question": question, "user": user}
+                )
         except Exception as e:
             logger.error(f"Failed to parse MQTT message: {e}")
 
@@ -156,7 +176,7 @@ class NabooAgent:
 
         try:
             result = agent(question)
-            response = str(result)
+            response = _clean_response(str(result))
             self._session_messages.append({
                 "user": user,
                 "question": question,
@@ -172,6 +192,9 @@ class NabooAgent:
     async def start(self):
         """Start the agent — connect MQTT and begin processing loop."""
         logger.info("Naboo agent starting...")
+
+        # Store event loop reference BEFORE starting MQTT (paho runs in its own thread)
+        self._loop = asyncio.get_event_loop()
 
         self._mqtt = self._connect_mqtt()
         set_mqtt_client(self._mqtt)
