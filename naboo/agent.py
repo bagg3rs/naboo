@@ -102,7 +102,7 @@ def _clean_response(text: str) -> str:
     text = text.strip().strip('"')
     # Strip trailing meta-commentary ("How's that?", "Is that helpful?", etc.)
     text = re.sub(
-        r'\s*(How\'?s that( for (a|an) \w+)?|Is that helpful|Does that help|Hope that helps|Hope this helps)[!?.]*\s*$',
+        r'\s*(How\'?s that( for (a|an) \w+)?|Is that helpful|Does that help|Hope that helps|Hope this helps|I found this information by[^.]*)[!?.]*\s*$',
         '', text, flags=re.IGNORECASE
     )
     # Collapse multiple newlines
@@ -236,13 +236,21 @@ class NabooAgent:
             except Exception as e:
                 logger.warning(f"Weather pre-fetch failed: {e}")
         # ── Football fixture pre-fetch ────────────────────────────────────────
-        if re.search(r'\b(arsenal|chelsea|liverpool|tottenham|man united|man city)\b', q) and \
-           re.search(r'\b(next|playing|fixtures?|schedule|match|game|when)\b', q):
+        # Trigger on any "next match/fixture/game/playing when" question
+        if re.search(r'\b(next|playing|fixtures?|schedule|when)\b', q) and \
+           re.search(r'\b(match|game|play(?:ing)?|kick.?off)\b', q):
             try:
                 from naboo.tools.strands_tools import web_search
-                team_match = re.search(r'\b(arsenal|chelsea|liverpool|tottenham|man united|man city)\b', q)
-                team = team_match.group(1).title() if team_match else "Arsenal"
-                search_result = web_search(f"{team} next Premier League fixture 2025-26")
+                # Extract team name — look for proper nouns before fixture keywords
+                team_match = re.search(
+                    r'(?:is\s+)?([A-Z][A-Za-z ]{2,20}?)(?:\s+(?:playing|FC|AFC|United|City|Town|FC)\b|\'s?\s+next)',
+                    question
+                )
+                if not team_match:
+                    # Fallback: look for known team patterns
+                    team_match = re.search(r'\b([A-Z][A-Za-z]+(?: [A-Z][A-Za-z]+)*(?:\s+(?:FC|AFC|United|City|Town))?)\b', question)
+                team = team_match.group(1).strip() if team_match else "Arsenal"
+                search_result = web_search(f"{team} next match fixture date 2025-26 season")
                 enriched = f"{question}\n\n[Search results: {search_result}]"
                 logger.info(f"Pre-fetched fixture info for {team}")
                 return enriched, True
