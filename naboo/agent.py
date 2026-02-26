@@ -100,6 +100,11 @@ def _clean_response(text: str) -> str:
     text = re.sub(r'^\w+\s+\{[^}]+\}\s*', '', text, flags=re.MULTILINE)
     # Remove leading/trailing quotes that sometimes wrap the response
     text = text.strip().strip('"')
+    # Strip trailing meta-commentary ("How's that?", "Is that helpful?", etc.)
+    text = re.sub(
+        r'\s*(How\'?s that( for (a|an) \w+)?|Is that helpful|Does that help|Hope that helps|Hope this helps)[!?.]*\s*$',
+        '', text, flags=re.IGNORECASE
+    )
     # Collapse multiple newlines
     text = re.sub(r'\n{3,}', '\n\n', text)
     return text.strip()
