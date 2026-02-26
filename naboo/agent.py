@@ -130,6 +130,7 @@ class NabooAgent:
         self._mqtt: Optional[mqtt.Client] = None
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._running = False
+        self._stopped = False
         self._question_queue: asyncio.Queue = asyncio.Queue()
         self._session_messages: list = []
 
@@ -188,8 +189,14 @@ class NabooAgent:
         import re
         q = question.lower()
         # ── Weather pre-fetch ─────────────────────────────────────────────────
-        if re.search(r'\b(weather|forecast|temperature|rain|sunny|cloudy|windy)\b', q):
-            location_match = re.search(r'\bin\s+([A-Za-z ]+?)(?:\s+today|\s+now|\s+tomorrow|\?|$)', question, re.IGNORECASE)
+        # Match "weather" or "forecast" but NOT general temp questions like "coldest on earth"
+        if re.search(r'\b(weather|forecast|raining|sunny|cloudy|windy)\b', q) or \
+           re.search(r'\bweather like\b', q):
+            # Clean location: strip trailing noise like "at the moment", "right now", "today"
+            location_match = re.search(
+                r'\bin\s+([A-Za-z][A-Za-z ]{1,20}?)(?:\s+(?:at the moment|right now|today|tomorrow|tonight|at present)|\s*[\?,]|$)',
+                question, re.IGNORECASE
+            )
             location = location_match.group(1).strip() if location_match else "London"
             try:
                 from naboo.tools.strands_tools import get_weather
@@ -291,6 +298,9 @@ class NabooAgent:
 
     async def stop(self):
         """Stop the agent and write session summary."""
+        if self._stopped:
+            return  # Guard against double-stop (two SIGTERMs)
+        self._stopped = True
         self._running = False
 
         # Write session summary to memory
