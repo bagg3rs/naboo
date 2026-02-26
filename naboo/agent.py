@@ -133,6 +133,35 @@ class NabooAgent:
         self._stopped = False
         self._question_queue: asyncio.Queue = asyncio.Queue()
         self._session_messages: list = []
+        # Map conversation_id → identified user (set when someone says "I am Ziggy")
+        self._identified_users: dict = {}
+
+    def _detect_user_introduction(self, text: str) -> Optional[str]:
+        """
+        Detect when someone identifies themselves (e.g. 'I am Ziggy').
+
+        Returns the identified name, or None if no introduction detected.
+        """
+        import re
+        # Patterns: "I'm X", "I am X", "my name is X", "it's X", "this is X"
+        patterns = [
+            r"(?:i'?m|i am|it'?s|this is|my name is)\s+([A-Za-z]+)",
+        ]
+        # Recognised family names and aliases
+        FAMILY = {
+            "ziggy": "Ziggy",
+            "lev": "Lev",
+            "dad": "Daddy", "daddy": "Daddy", "richard": "Daddy",
+            "mum": "Mummy", "mummy": "Mummy", "vanessa": "Mummy",
+        }
+        text_lower = text.lower()
+        for pattern in patterns:
+            match = re.search(pattern, text_lower)
+            if match:
+                name = match.group(1).lower()
+                if name in FAMILY:
+                    return FAMILY[name]
+        return None
 
     # ── MQTT ─────────────────────────────────────────────────────────────────
 
@@ -277,8 +306,19 @@ class NabooAgent:
             try:
                 item = await asyncio.wait_for(self._question_queue.get(), timeout=1.0)
                 question = item["question"]
-                user = item.get("user", "unknown")
+                raw_user = item.get("user", "unknown")
                 conversation_id = item.get("conversation_id")
+
+                # Detect introductions: "I am Ziggy" → remember for this conversation
+                introduced = self._detect_user_introduction(question)
+                if introduced and conversation_id:
+                    self._identified_users[conversation_id] = introduced
+                    logger.info(f"User identified as {introduced} for conv:{conversation_id}")
+
+                # Resolve user — prefer identified name over "unknown"
+                user = self._identified_users.get(conversation_id, raw_user)
+                if user == "unknown" and conversation_id in self._identified_users:
+                    user = self._identified_users[conversation_id]
 
                 logger.info(f"Question from {user} (conv:{conversation_id}): {question}")
                 response = await self._process_question(question, user)
