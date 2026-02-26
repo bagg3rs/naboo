@@ -72,17 +72,35 @@ def _load_system_prompt() -> str:
 
 def _clean_response(text: str) -> str:
     """
-    Strip Strands tool narration from agent responses.
+    Strip Strands tool narration from agent responses and extract clean text.
 
-    Strands includes lines like '[Use robot_speak "hello"]' in the response text.
-    Home Assistant only needs the final conversational text, not the tool trace.
+    Strands may produce:
+      - [Use robot_speak "hello"] — bracket annotation format
+      - robot_speak {"text": "hello"} — inline tool call format
+      - A plain conversational response (ideal)
     """
     import re
+    import json as _json
+
+    # If the whole response looks like a tool call with JSON arg, extract the text
+    # e.g. robot_speak {"text": "2 plus 2 is 4."}
+    tool_json_match = re.match(r'^\w+\s+(\{.+\})\s*$', text.strip(), re.DOTALL)
+    if tool_json_match:
+        try:
+            data = _json.loads(tool_json_match.group(1))
+            extracted = data.get("text") or data.get("message") or data.get("response")
+            if extracted:
+                return extracted.strip()
+        except Exception:
+            pass
+
     # Remove tool call annotations: [Use tool_name "..."] or [Use tool_name ...]
     text = re.sub(r'\[Use \w+[^\]]*\]', '', text)
+    # Remove inline tool calls: tool_name {"text": "..."}  (at start of line)
+    text = re.sub(r'^\w+\s+\{[^}]+\}\s*', '', text, flags=re.MULTILINE)
     # Remove leading/trailing quotes that sometimes wrap the response
     text = text.strip().strip('"')
-    # Collapse multiple spaces/newlines
+    # Collapse multiple newlines
     text = re.sub(r'\n{3,}', '\n\n', text)
     return text.strip()
 
@@ -142,11 +160,13 @@ class NabooAgent:
             payload = json.loads(msg.payload.decode())
             question = payload.get("text") or payload.get("question") or str(payload)
             user = payload.get("user", "unknown")
+            # Pass conversation_id through so the HA component can match responses
+            conversation_id = payload.get("conversation_id")
             # Use stored loop reference — paho runs callbacks in its own thread
             if self._loop:
                 self._loop.call_soon_threadsafe(
                     self._question_queue.put_nowait,
-                    {"question": question, "user": user}
+                    {"question": question, "user": user, "conversation_id": conversation_id}
                 )
         except Exception as e:
             logger.error(f"Failed to parse MQTT message: {e}")
@@ -207,17 +227,18 @@ class NabooAgent:
                 item = await asyncio.wait_for(self._question_queue.get(), timeout=1.0)
                 question = item["question"]
                 user = item.get("user", "unknown")
+                conversation_id = item.get("conversation_id")
 
-                logger.info(f"Question from {user}: {question}")
+                logger.info(f"Question from {user} (conv:{conversation_id}): {question}")
                 response = await self._process_question(question, user)
                 logger.info(f"Response: {response[:100]}...")
 
-                # Publish answer
+                # Publish answer — include conversation_id so HA component can match it
                 if self._mqtt:
-                    self._mqtt.publish(
-                        ANSWER_TOPIC,
-                        json.dumps({"text": response, "user": user}),
-                    )
+                    payload = {"text": response, "user": user, "response": response}
+                    if conversation_id:
+                        payload["conversation_id"] = conversation_id
+                    self._mqtt.publish(ANSWER_TOPIC, json.dumps(payload))
 
             except asyncio.TimeoutError:
                 continue

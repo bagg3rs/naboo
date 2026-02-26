@@ -49,6 +49,19 @@ class QueryClassifier:
         r'\b(thanks|thank you|thx)\b',
         r'\b(yes|no|ok|okay|sure|nope)\b',
     ]
+
+    # Simple factual questions — handled by 3b (fast)
+    SIMPLE_FACT_PATTERNS = [
+        r'\bwhat is \d',                               # "what is 2 plus 2"
+        r'\bwhat\'?s \d',                              # "what's 5 times 3"
+        r'\b(\d+)\s*(plus|minus|times|divided by|multiplied by|\+|\-|\*|\/)\s*(\d+)\b',
+        r'\bwhat (colour|color) is\b',                 # "what colour is Ziggy's..."
+        r'\bwhat is (his|her|their|my|your) (favourite|favorite)\b',
+        r'\bwhat (is|are) (Arsenal|Chelsea|Liverpool|Tottenham|the)\b',  # football facts
+        r'\bwho (is|are) (Ziggy|Lev|naboo)\b',         # family/identity questions
+        r'\bhow old is\b',
+        r'\bwhat does .{1,20} mean\b',                  # short definition questions
+    ]
     
     # Patterns for simple commands
     SIMPLE_COMMAND_PATTERNS = [
@@ -105,6 +118,7 @@ class QueryClassifier:
         
         # Compile regex patterns for efficiency
         self._greeting_regex = [re.compile(p, re.IGNORECASE) for p in self.GREETING_PATTERNS]
+        self._simple_fact_regex = [re.compile(p, re.IGNORECASE) for p in self.SIMPLE_FACT_PATTERNS]
         self._simple_command_regex = [re.compile(p, re.IGNORECASE) for p in self.SIMPLE_COMMAND_PATTERNS]
         self._moderate_regex = [re.compile(p, re.IGNORECASE) for p in self.MODERATE_PATTERNS]
         self._complex_regex = [re.compile(p, re.IGNORECASE) for p in self.COMPLEX_PATTERNS]
@@ -158,7 +172,16 @@ class QueryClassifier:
             complexity = QueryComplexity.COMPLEX
             self.cache_classification(query, complexity)
             return complexity
-        
+
+        # Check for simple facts (short factual questions handled by 3b)
+        # Must come BEFORE moderate check — "what is X" matches both
+        if query_length < 80:
+            for pattern in self._simple_fact_regex:
+                if pattern.search(query_lower):
+                    complexity = QueryComplexity.SIMPLE
+                    self.cache_classification(query, complexity)
+                    return complexity
+
         # Check for moderate patterns (before simple checks)
         for pattern in self._moderate_regex:
             if pattern.search(query_lower):
