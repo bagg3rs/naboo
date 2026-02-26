@@ -10,7 +10,7 @@ This repo documents the journey from **stock robot** to **physical AI agent**: n
 
 ## What Naboo Can Do
 
-- **Talk back** — voice commands via Home Assistant wake word ("hey Naboo"), responses via AWS Polly TTS or pre-recorded clips
+- **Talk back** — voice commands via Home Assistant wake word ("hey Naboo"), responses via HA TTS using the Ryan Cheerful voice
 - **Think** — [Strands agents](https://github.com/strands-agents/sdk-python) powering dual-LLM routing: fast local responses for simple commands, cloud reasoning for complex ones
 - **See** — camera with real-time scene analysis, object detection, ArUco marker navigation
 - **Move intelligently** — autonomous exploration, obstacle avoidance, shape drawing, room mapping
@@ -24,8 +24,8 @@ This repo documents the journey from **stock robot** to **physical AI agent**: n
 | Agent framework | [Strands Agents](https://github.com/strands-agents/sdk-python) |
 | Fast LLM (local) | Ollama / Qwen 2.5:3b |
 | Smart LLM (cloud) | AWS Bedrock / Claude |
-| Voice in | Home Assistant wake word |
-| Voice out | AWS Polly + pre-recorded clips |
+| Voice in | Home Assistant wake word ("hey Naboo") |
+| Voice out | Home Assistant TTS — Ryan Cheerful (edge TTS) |
 | Vision | Camera + Claude Vision |
 | Messaging | MQTT / AWS IoT Core |
 | Home automation | Home Assistant |
