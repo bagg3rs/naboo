@@ -173,7 +173,30 @@ class NabooAgent:
 
     # ── Agent ─────────────────────────────────────────────────────────────────
 
-    def _build_strands_agent(self, question: str) -> Agent:
+    def _enrich_question(self, question: str) -> tuple[str, bool]:
+        """
+        Pre-fetch tool data for tool-backed queries and inject into the prompt.
+
+        Returns (enriched_question, tools_disabled) where tools_disabled=True
+        means the agent shouldn't use tools (data already injected).
+        """
+        import re
+        q = question.lower()
+        if re.search(r'\b(weather|forecast|temperature|rain|sunny|cloudy|windy)\b', q):
+            # Extract location or default to London
+            location_match = re.search(r'\bin\s+([A-Za-z ]+?)(?:\s+today|\s+now|\?|$)', question, re.IGNORECASE)
+            location = location_match.group(1).strip() if location_match else "London"
+            try:
+                from naboo.tools.strands_tools import get_weather
+                weather_data = get_weather(location)
+                enriched = f"{question}\n\n[Weather data: {weather_data}]"
+                logger.info(f"Pre-fetched weather for '{location}': {weather_data}")
+                return enriched, True
+            except Exception as e:
+                logger.warning(f"Weather pre-fetch failed: {e}")
+        return question, False
+
+    def _build_strands_agent(self, question: str, no_tools: bool = False) -> Agent:
         """Build Strands agent with the right model for this question."""
         complexity = self.classifier.classify_query(question)
         model_config = self.router.select_model(complexity)
@@ -182,20 +205,23 @@ class NabooAgent:
         logger.info(
             f"Routing '{question[:50]}...' → "
             f"{complexity.value} → {model_config.provider}/{model_config.model_id}"
+            + (" [no-tools, pre-fetched]" if no_tools else "")
         )
 
         return Agent(
             model=model,
             system_prompt=self.system_prompt,
-            tools=ALL_TOOLS,
+            tools=[] if no_tools else ALL_TOOLS,
         )
 
     async def _process_question(self, question: str, user: str) -> str:
         """Run the agent on a question and return the response."""
-        agent = self._build_strands_agent(question)
+        # Pre-fetch tool data where possible to avoid 3b getting stuck in tool loops
+        enriched_question, no_tools = self._enrich_question(question)
+        agent = self._build_strands_agent(enriched_question, no_tools=no_tools)
 
         try:
-            result = agent(question)
+            result = agent(enriched_question)
             response = _clean_response(str(result))
             self._session_messages.append({
                 "user": user,
