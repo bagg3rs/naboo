@@ -261,6 +261,12 @@ class NabooAgent:
     def _build_strands_agent(self, question: str, no_tools: bool = False) -> Agent:
         """Build Strands agent with the right model for this question."""
         complexity = self.classifier.classify_query(question)
+
+        # When data is pre-fetched we don't need Bedrock's search capability.
+        # Cap at MODERATE (MLX 7b) — the injected context is already there.
+        if no_tools and complexity in (QueryComplexity.COMPLEX, QueryComplexity.CURRENT_INFO):
+            complexity = QueryComplexity.MODERATE
+
         model_config = self.router.select_model(complexity)
         model = self.router.get_model_instance(model_config)
 
