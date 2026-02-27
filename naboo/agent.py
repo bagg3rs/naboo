@@ -124,6 +124,11 @@ def _clean_response(text: str) -> str:
 
     # ── 4. Collapse whitespace ─────────────────────────────────────────────
     text = re.sub(r'\n{3,}', '\n\n', text)
+
+    # ── 5. Strip common model-generated prefixes ──────────────────────────
+    text = re.sub(r'^Robot\s+says\s*[:\-]\s*["\']?', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'^(Naboo\s+says|Naboo\s+responds?|Response)\s*[:\-]\s*["\']?', '', text, flags=re.IGNORECASE)
+
     return text.strip()
 
 
