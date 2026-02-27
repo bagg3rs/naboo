@@ -15,9 +15,8 @@ This is the build log.
 
 - [Chapter 1 — Stock Robot](01-stock-robot/) — what we started with
 - [Chapter 2 — Adding a Brain](02-adding-a-brain/) — Strands agents, dual-LLM routing, and why memory matters
-- Chapter 3 — Finding Her Voice *(coming soon)*
+- [Chapter 3 — A Faster Brain](03-faster-brain/) — MLX vs Ollama: 3x speedup on a Mac mini M4
 - Chapter 4 — Eyes Open *(coming soon)*
-- Chapter 5 — What's Next *(coming soon)*
 
 ---
 
@@ -27,12 +26,12 @@ This is the build log.
 |-------|-----------|
 | Robot body | mBot2 (CyberPi / ESP32) |
 | Agent framework | Strands Agents |
-| Fast LLM | Ollama (local) |
-| Smart LLM | AWS Bedrock / Claude |
+| Local LLM | MLX / Qwen 2.5 7B (Mac mini M4) |
+| Cloud LLM | AWS Bedrock / Claude (fallback) |
 | Voice in | Home Assistant wake word |
-| Voice out | AWS Polly + pre-recorded clips |
+| Voice out | HA TTS — Ryan Cheerful |
 | Vision | Camera + Claude Vision |
-| Messaging | MQTT / AWS IoT Core |
+| Messaging | MQTT (Mosquitto) |
 
 ---
 
