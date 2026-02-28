@@ -341,6 +341,43 @@ class NabooAgent:
             logger.error(f"Agent error: {e}")
             return "Sorry, I had a little trouble with that one. Can you ask me again?"
 
+    async def _warmup_mlx(self):
+        """
+        Send a trivial inference to keep the MLX model warm in memory.
+
+        Cold starts (after overnight idle) take 8-10s because macOS pages out
+        model weights under memory pressure. This fires at agent startup so the
+        first real query is always fast. Effect: ~2-3s, negligible power (~5W
+        for a few seconds).
+
+        Only runs during active hours (08:00–22:00) to let the Mac mini rest.
+        """
+        from datetime import datetime
+        hour = datetime.now().hour
+        if not (8 <= hour <= 22):
+            logger.info("MLX warmup skipped (outside active hours 08:00–22:00)")
+            return
+
+        mlx_host = os.getenv("MLX_HOST", "")
+        if not mlx_host:
+            return  # Not using MLX, nothing to warm
+
+        try:
+            import httpx
+            logger.info(f"MLX warmup: sending ping to {mlx_host}...")
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                await client.post(
+                    f"{mlx_host}/v1/chat/completions",
+                    json={
+                        "model": os.getenv("MLX_MODEL_S2", "mlx-community/Qwen2.5-7B-Instruct-4bit"),
+                        "messages": [{"role": "user", "content": "hi"}],
+                        "max_tokens": 5,
+                    },
+                )
+            logger.info("MLX warmup complete — model is hot")
+        except Exception as e:
+            logger.warning(f"MLX warmup failed (non-fatal): {e}")
+
     # ── Lifecycle ─────────────────────────────────────────────────────────────
 
     async def start(self):
@@ -355,6 +392,9 @@ class NabooAgent:
 
         self._running = True
         logger.info("Naboo is ready. Listening for questions...")
+
+        # Kick off background warmup so the first real query is always fast
+        asyncio.ensure_future(self._warmup_mlx())
 
         while self._running:
             try:
