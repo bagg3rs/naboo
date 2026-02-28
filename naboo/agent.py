@@ -253,9 +253,14 @@ class NabooAgent:
         import re
         q = question.lower()
         # ── Weather pre-fetch ─────────────────────────────────────────────────
-        # Match "weather" or "forecast" but NOT general temp questions like "coldest on earth"
-        if re.search(r'\b(weather|forecast|raining|sunny|cloudy|windy)\b', q) or \
-           re.search(r'\bweather like\b', q):
+        # Match weather intent: explicit weather words OR "temperature" with location/time context
+        # Deliberately excludes "coldest temperature on Earth" type queries (no location/time modifier)
+        is_weather = (
+            re.search(r'\b(weather|forecast|raining|sunny|cloudy|windy)\b', q)
+            or re.search(r'\bweather like\b', q)
+            or (re.search(r'\btemperature\b', q) and re.search(r'\b(today|tomorrow|tonight|now|in [A-Z]|like)\b', question))
+        )
+        if is_weather:
             # Clean location: strip trailing noise like "at the moment", "right now", "today"
             location_match = re.search(
                 r'\bin\s+([A-Za-z][A-Za-z ]{1,20}?)(?:\s+(?:at the moment|right now|today|tomorrow|tonight|at present)|\s*[\?,]|$)',
