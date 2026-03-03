@@ -326,7 +326,6 @@ class NabooAgent:
             model=model,
             system_prompt=self.system_prompt,
             tools=[] if no_tools else ALL_TOOLS,
-            callback_handler=telemetry.NabooCallbackHandler(),
         ), route_attrs
 
     async def _process_question(self, question: str, user: str, conversation_id: str = "") -> str:

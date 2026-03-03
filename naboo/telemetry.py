@@ -1,10 +1,12 @@
 """
 OpenTelemetry setup for Naboo.
 
-Exports traces via OTLP (gRPC or HTTP).
-Configure with env vars:
-  OTEL_EXPORTER_OTLP_ENDPOINT  — e.g. http://192.168.0.50:4317 (gRPC default)
-  OTEL_EXPORTER_OTLP_PROTOCOL  — "grpc" (default) or "http/protobuf"
+Delegates to Strands' own StrandsTelemetry so the global provider is set up
+correctly and Strands' native spans (LLM calls, tool invocations, token usage)
+are exported alongside Naboo's custom spans.
+
+Configure with env vars (standard OTel):
+  OTEL_EXPORTER_OTLP_ENDPOINT  — e.g. http://192.168.0.185:4317
   OTEL_SERVICE_NAME            — defaults to "naboo"
   NABOO_OTEL_ENABLED           — set to "false" to disable entirely
 """
@@ -17,70 +19,76 @@ from typing import Iterator, Optional
 
 logger = logging.getLogger(__name__)
 
-# Lazy-initialised tracer — None until setup() is called
-_tracer = None
+_initialised = False
 
 
 def setup(service_name: Optional[str] = None) -> None:
-    """Initialise OTel SDK. Safe to call multiple times (no-op after first)."""
-    global _tracer
+    """
+    Initialise OTel by delegating to StrandsTelemetry.
 
-    if _tracer is not None:
-        return  # already set up
+    Strands owns the global TracerProvider — using their setup avoids
+    the 20-40s stall caused by our provider conflicting with Strands'
+    own tracer/span creation on every event loop cycle.
+    """
+    global _initialised
+
+    if _initialised:
+        return
 
     if os.getenv("NABOO_OTEL_ENABLED", "true").lower() == "false":
         logger.info("OTel disabled (NABOO_OTEL_ENABLED=false)")
+        _initialised = True
         return
 
     endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "")
     if not endpoint:
         logger.info("OTel: no OTEL_EXPORTER_OTLP_ENDPOINT set — traces will be no-ops")
+        _initialised = True
         return
 
+    # Set service name env var if passed (StrandsTelemetry reads OTEL_SERVICE_NAME)
+    if service_name:
+        os.environ.setdefault("OTEL_SERVICE_NAME", service_name)
+    else:
+        os.environ.setdefault("OTEL_SERVICE_NAME", "naboo")
+
     try:
-        from opentelemetry import trace
-        from opentelemetry.sdk.trace import TracerProvider
-        from opentelemetry.sdk.trace.export import BatchSpanProcessor
-        from opentelemetry.sdk.resources import Resource
-
-        name = service_name or os.getenv("OTEL_SERVICE_NAME", "naboo")
-        resource = Resource.create({"service.name": name})
-        provider = TracerProvider(resource=resource)
-
-        protocol = os.getenv("OTEL_EXPORTER_OTLP_PROTOCOL", "grpc").lower()
-
-        if protocol == "http/protobuf":
-            from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
-            exporter = OTLPSpanExporter(endpoint=f"{endpoint}/v1/traces")
-        else:
-            from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
-            exporter = OTLPSpanExporter(endpoint=endpoint, insecure=True)
-
-        provider.add_span_processor(BatchSpanProcessor(exporter))
-        trace.set_tracer_provider(provider)
-
-        _tracer = trace.get_tracer("naboo")
-        logger.info(f"OTel tracing enabled → {endpoint} ({protocol})")
-
-    except ImportError as e:
-        logger.warning(f"OTel packages not installed, tracing disabled: {e}")
+        from strands.telemetry import StrandsTelemetry
+        strands_telemetry = StrandsTelemetry()
+        strands_telemetry.setup_otlp_exporter()
+        _initialised = True
+        logger.info(f"OTel tracing enabled via StrandsTelemetry → {endpoint}")
+    except ImportError:
+        logger.warning("StrandsTelemetry not available — tracing disabled")
+        _initialised = True
     except Exception as e:
         logger.warning(f"OTel setup failed (non-fatal): {e}")
+        _initialised = True
 
 
 def get_tracer():
-    """Return the tracer, or None if OTel is not set up."""
-    return _tracer
+    """Return the global OTel tracer (set up by StrandsTelemetry), or None."""
+    if not _initialised:
+        return None
+    endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "")
+    if not endpoint or os.getenv("NABOO_OTEL_ENABLED", "true").lower() == "false":
+        return None
+    try:
+        from opentelemetry import trace
+        tracer = trace.get_tracer("naboo")
+        return tracer
+    except Exception:
+        return None
 
 
 @contextmanager
 def span(name: str, attributes: Optional[dict] = None) -> Iterator:
     """
-    Context manager for a named span. No-op if OTel not configured.
+    Context manager for a named span under the current active span.
+    No-op if OTel not configured.
 
     Usage:
         with telemetry.span("naboo.route", {"complexity": "simple"}) as s:
-            ...
             s.set_attribute("model", "mlx")
     """
     tracer = get_tracer()
@@ -106,42 +114,3 @@ class _NoOpSpan:
 
     def set_status(self, status):
         pass
-
-
-class NabooCallbackHandler:
-    """
-    Strands callback handler that emits OTel spans for tool invocations.
-
-    Attach to Agent via: agent = Agent(..., callback_handler=NabooCallbackHandler())
-
-    When a tool fires, this records a child span under the current active span.
-    Each tool invocation gets: start time, tool name, and duration.
-    """
-
-    def __init__(self):
-        self._pending: dict[str, tuple[object, float]] = {}  # toolUseId → (span, t0)
-
-    def __call__(self, **kwargs) -> None:
-        event = kwargs.get("event", {})
-        if not event:
-            return
-
-        # Tool starting — contentBlockStart with toolUse
-        tool_use = event.get("contentBlockStart", {}).get("start", {}).get("toolUse")
-        if tool_use:
-            tool_name = tool_use.get("name", "unknown")
-            tool_id = tool_use.get("toolUseId", tool_name)
-            tracer = get_tracer()
-            if tracer:
-                s = tracer.start_span(f"naboo.tool.{tool_name}", attributes={"tool": tool_name})
-                self._pending[tool_id] = (s, time.monotonic())
-
-        # Tool result — contentBlockStop or toolResult event
-        content_stop = event.get("contentBlockStop")
-        if content_stop and self._pending:
-            # Close the most recently opened tool span
-            for tool_id, (s, t0) in list(self._pending.items()):
-                s.set_attribute("duration_ms", f"{(time.monotonic() - t0) * 1000:.0f}")
-                s.end()
-                del self._pending[tool_id]
-                break
