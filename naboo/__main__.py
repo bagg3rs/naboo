@@ -47,6 +47,10 @@ def main():
     logger = logging.getLogger("naboo")
     logger.info("Starting Naboo...")
 
+    # Initialise OTel tracing (no-op if OTEL_EXPORTER_OTLP_ENDPOINT not set)
+    from naboo import telemetry
+    telemetry.setup()
+
     agent = NabooAgent()
 
     loop = asyncio.new_event_loop()

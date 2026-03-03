@@ -11,8 +11,11 @@ import asyncio
 import json
 import logging
 import os
+import time
 from pathlib import Path
 from typing import Optional
+
+from naboo import telemetry
 
 import paho.mqtt.client as mqtt
 from strands import Agent
@@ -253,44 +256,40 @@ class NabooAgent:
         import re
         q = question.lower()
         # ── Weather pre-fetch ─────────────────────────────────────────────────
-        # Match weather intent: explicit weather words OR "temperature" with location/time context
-        # Deliberately excludes "coldest temperature on Earth" type queries (no location/time modifier)
         is_weather = (
             re.search(r'\b(weather|forecast|raining|sunny|cloudy|windy)\b', q)
             or re.search(r'\bweather like\b', q)
             or (re.search(r'\btemperature\b', q) and re.search(r'\b(today|tomorrow|tonight|now|in [A-Z]|like)\b', question))
         )
         if is_weather:
-            # Clean location: strip trailing noise like "at the moment", "right now", "today"
             location_match = re.search(
                 r'\bin\s+([A-Za-z][A-Za-z ]{1,20}?)(?:\s+(?:at the moment|right now|today|tomorrow|tonight|at present)|\s*[\?,]|$)',
                 question, re.IGNORECASE
             )
             location = location_match.group(1).strip() if location_match else "London"
             try:
-                from naboo.tools.strands_tools import get_weather
-                weather_data = get_weather(location)
+                with telemetry.span("naboo.prefetch.weather", {"location": location}):
+                    from naboo.tools.strands_tools import get_weather
+                    weather_data = get_weather(location)
                 enriched = f"{question}\n\n[Weather data: {weather_data}]"
                 logger.info(f"Pre-fetched weather for '{location}': {weather_data}")
                 return enriched, True
             except Exception as e:
                 logger.warning(f"Weather pre-fetch failed: {e}")
         # ── Football fixture pre-fetch ────────────────────────────────────────
-        # Trigger on any "next match/fixture/game/playing when" question
         if re.search(r'\b(next|playing|fixtures?|schedule|when)\b', q) and \
            re.search(r'\b(match|game|play(?:ing)?|kick.?off)\b', q):
             try:
                 from naboo.tools.strands_tools import web_search
-                # Extract team name — look for proper nouns before fixture keywords
                 team_match = re.search(
                     r'(?:is\s+)?([A-Z][A-Za-z ]{2,20}?)(?:\s+(?:playing|FC|AFC|United|City|Town|FC)\b|\'s?\s+next)',
                     question
                 )
                 if not team_match:
-                    # Fallback: look for known team patterns
                     team_match = re.search(r'\b([A-Z][A-Za-z]+(?: [A-Z][A-Za-z]+)*(?:\s+(?:FC|AFC|United|City|Town))?)\b', question)
                 team = team_match.group(1).strip() if team_match else "Arsenal"
-                search_result = web_search(f"{team} next match fixture date 2025-26 season")
+                with telemetry.span("naboo.prefetch.fixture", {"team": team}):
+                    search_result = web_search(f"{team} next match fixture date 2025-26 season")
                 enriched = f"{question}\n\n[Search results: {search_result}]"
                 logger.info(f"Pre-fetched fixture info for {team}")
                 return enriched, True
@@ -298,8 +297,8 @@ class NabooAgent:
                 logger.warning(f"Fixture pre-fetch failed: {e}")
         return question, False
 
-    def _build_strands_agent(self, question: str, no_tools: bool = False) -> Agent:
-        """Build Strands agent with the right model for this question."""
+    def _build_strands_agent(self, question: str, no_tools: bool = False) -> tuple["Agent", dict]:
+        """Build Strands agent with the right model for this question. Returns (agent, route_attrs)."""
         complexity = self.classifier.classify_query(question)
 
         # When data is pre-fetched we don't need Bedrock's search capability.
@@ -316,30 +315,61 @@ class NabooAgent:
             + (" [no-tools, pre-fetched]" if no_tools else "")
         )
 
+        route_attrs = {
+            "complexity": complexity.value,
+            "provider": model_config.provider,
+            "model": model_config.model_id,
+            "no_tools": str(no_tools),
+        }
+
         return Agent(
             model=model,
             system_prompt=self.system_prompt,
             tools=[] if no_tools else ALL_TOOLS,
-        )
+            callback_handler=telemetry.NabooCallbackHandler(),
+        ), route_attrs
 
-    async def _process_question(self, question: str, user: str) -> str:
+    async def _process_question(self, question: str, user: str, conversation_id: str = "") -> str:
         """Run the agent on a question and return the response."""
-        # Pre-fetch tool data where possible to avoid 3b getting stuck in tool loops
-        enriched_question, no_tools = self._enrich_question(question)
-        agent = self._build_strands_agent(enriched_question, no_tools=no_tools)
+        t0 = time.monotonic()
 
-        try:
-            result = agent(enriched_question)
-            response = _clean_response(str(result))
-            self._session_messages.append({
-                "user": user,
-                "question": question,
-                "response": response,
-            })
-            return response
-        except Exception as e:
-            logger.error(f"Agent error: {e}")
-            return "Sorry, I had a little trouble with that one. Can you ask me again?"
+        with telemetry.span("naboo.question", {
+            "user": user,
+            "conversation_id": conversation_id,
+            "question_len": len(question),
+        }) as root_span:
+
+            # Pre-fetch
+            with telemetry.span("naboo.enrich") as enrich_span:
+                enriched_question, no_tools = self._enrich_question(question)
+                enrich_span.set_attribute("pre_fetched", str(no_tools))
+                enrich_span.set_attribute("enriched", str(enriched_question != question))
+
+            # Route
+            with telemetry.span("naboo.route") as route_span:
+                agent, route_attrs = self._build_strands_agent(enriched_question, no_tools=no_tools)
+                for k, v in route_attrs.items():
+                    route_span.set_attribute(k, v)
+
+            # Run
+            try:
+                with telemetry.span("naboo.agent.run", route_attrs):
+                    result = agent(enriched_question)
+
+                response = _clean_response(str(result))
+                elapsed = time.monotonic() - t0
+                root_span.set_attribute("response_len", len(response))
+                root_span.set_attribute("elapsed_s", f"{elapsed:.2f}")
+                self._session_messages.append({
+                    "user": user,
+                    "question": question,
+                    "response": response,
+                })
+                return response
+            except Exception as e:
+                logger.error(f"Agent error: {e}")
+                root_span.record_exception(e)
+                return "Sorry, I had a little trouble with that one. Can you ask me again?"
 
     async def _warmup_mlx(self):
         """
@@ -415,7 +445,7 @@ class NabooAgent:
                     user = self._identified_users[conversation_id]
 
                 logger.info(f"Question from {user} (conv:{conversation_id}): {question}")
-                response = await self._process_question(question, user)
+                response = await self._process_question(question, user, conversation_id or "")
                 logger.info(f"Response: {response[:100]}...")
 
                 # Publish answer — include conversation_id so HA component can match it

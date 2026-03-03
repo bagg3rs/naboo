@@ -16,6 +16,8 @@ from typing import Optional, Any
 import paho.mqtt.client as mqtt
 from strands import tool
 
+from naboo import telemetry
+
 logger = logging.getLogger(__name__)
 
 # Global MQTT client (injected at startup)

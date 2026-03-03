@@ -14,6 +14,10 @@ dependencies = [
     "amqtt>=0.11.3",
     "ddgs>=9.10.0",
     "openai>=2.24.0",
+    "opentelemetry-api>=1.20.0",
+    "opentelemetry-sdk>=1.20.0",
+    "opentelemetry-exporter-otlp-proto-grpc>=1.20.0",
+    "opentelemetry-exporter-otlp-proto-http>=1.20.0",
 ]
 
 [project.scripts]
