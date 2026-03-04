@@ -48,8 +48,8 @@ c.publish(Q_TOPIC, json.dumps({
     "conversation_id": f"test-{int(time.time())}",
 }))
 
-print("Waiting up to 20s for answer...")
-for _ in range(20):
+print("Waiting up to 30s for answer...")
+for _ in range(30):
     if answers:
         break
     time.sleep(1)

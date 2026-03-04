@@ -1234,6 +1234,71 @@ def web_search(query: str) -> str:
 
 
 @tool
+def get_camera_view(question: str = "What do you see? Describe in 2-3 sentences.") -> str:
+    """
+    Look through Naboo's camera and describe what you see.
+    Use this when asked:
+    - "What do you see?" / "What can you see?"
+    - "What's in the room?" / "Look around"
+    - "Is anyone there?" / "Can you see me?"
+    - Any question about what's currently visible
+
+    Args:
+        question: What to look for or describe, e.g. "What do you see?",
+                  "Is there anyone in the room?", "Are there any obstacles ahead?"
+
+    Returns:
+        Description of what the camera currently sees
+    """
+    import os
+    import httpx
+    import base64
+
+    logger.info(f"TOOL: get_camera_view called with question='{question[:60]}'")
+
+    camera_url = os.getenv("NABOO_CAMERA_URL", "")
+    vision_url = os.getenv("NABOO_VISION_URL", "")
+
+    if not camera_url or not vision_url:
+        result = "My camera isn't set up yet. Ask me again soon!"
+        logger.info(f"TOOL: get_camera_view result='{result}' (missing env vars)")
+        return result
+
+    try:
+        # Grab a frame from the camera
+        cam_resp = httpx.get(camera_url, timeout=5.0)
+        cam_resp.raise_for_status()
+        image_b64 = base64.b64encode(cam_resp.content).decode("utf-8")
+        logger.info(f"TOOL: get_camera_view fetched frame: {len(cam_resp.content)} bytes")
+
+        # Send to vision server on Mac mini
+        vision_resp = httpx.post(
+            f"{vision_url}/vision",
+            json={"image_b64": image_b64, "question": question, "max_tokens": 150},
+            timeout=30.0,
+        )
+        vision_resp.raise_for_status()
+        data = vision_resp.json()
+        result = data["description"]
+        elapsed = data.get("elapsed_s", 0)
+        logger.info(f"TOOL: get_camera_view result in {elapsed:.1f}s: '{result[:60]}'")
+        return result
+
+    except httpx.ConnectError:
+        result = "I can't see anything right now — my camera isn't responding."
+        logger.warning(f"TOOL: get_camera_view camera connect error")
+        return result
+    except httpx.TimeoutException:
+        result = "My camera took too long to respond. Try again in a moment!"
+        logger.warning(f"TOOL: get_camera_view timeout")
+        return result
+    except Exception as e:
+        logger.error(f"TOOL: get_camera_view error: {e}", exc_info=True)
+        result = "I had trouble looking through my camera just now."
+        return result
+
+
+@tool
 def query_vision(query: str, camera: str = "robot") -> str:
     """
     IMPORTANT: Use this tool whenever asked about vision, seeing, camera, or what's visible.

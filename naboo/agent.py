@@ -33,7 +33,7 @@ from naboo.tools.strands_tools import (
     robot_speak, robot_sound, robot_control,
     execute_movement_sequence,
     get_weather, web_search,
-    query_vision,
+    get_camera_view,
     auto_mode,
     get_bird_stats, get_bird_patterns,
     play_tune, list_tunes,
@@ -55,7 +55,7 @@ ALL_TOOLS = [
     robot_speak, robot_sound,
     robot_control, execute_movement_sequence,
     get_weather, web_search,
-    query_vision,
+    get_camera_view,
     auto_mode,
     get_bird_stats, get_bird_patterns,
     play_tune, list_tunes,
@@ -372,14 +372,11 @@ class NabooAgent:
 
     async def _warmup_mlx(self):
         """
-        Send a trivial inference to keep the MLX model warm in memory.
+        Send a trivial inference to keep the MLX text + vision models warm.
 
-        Cold starts (after overnight idle) take 8-10s because macOS pages out
-        model weights under memory pressure. This fires at agent startup so the
-        first real query is always fast. Effect: ~2-3s, negligible power (~5W
-        for a few seconds).
-
-        Only runs during active hours (08:00–22:00) to let the Mac mini rest.
+        Cold starts take 8-13s because macOS pages out weights under memory
+        pressure. Fires at agent startup so the first real query is fast.
+        Only runs during active hours (08:00–22:00).
         """
         from datetime import datetime
         hour = datetime.now().hour
@@ -387,25 +384,44 @@ class NabooAgent:
             logger.info("MLX warmup skipped (outside active hours 08:00–22:00)")
             return
 
-        mlx_host = os.getenv("MLX_HOST", "")
-        if not mlx_host:
-            return  # Not using MLX, nothing to warm
+        import httpx
 
-        try:
-            import httpx
-            logger.info(f"MLX warmup: sending ping to {mlx_host}...")
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                await client.post(
-                    f"{mlx_host}/v1/chat/completions",
-                    json={
-                        "model": os.getenv("MLX_MODEL_S2", "mlx-community/Qwen2.5-7B-Instruct-4bit"),
-                        "messages": [{"role": "user", "content": "hi"}],
-                        "max_tokens": 5,
-                    },
-                )
-            logger.info("MLX warmup complete — model is hot")
-        except Exception as e:
-            logger.warning(f"MLX warmup failed (non-fatal): {e}")
+        # Warm text model
+        mlx_host = os.getenv("MLX_HOST", "")
+        if mlx_host:
+            try:
+                logger.info(f"MLX warmup: sending ping to {mlx_host}...")
+                async with httpx.AsyncClient(timeout=30.0) as client:
+                    await client.post(
+                        f"{mlx_host}/v1/chat/completions",
+                        json={
+                            "model": os.getenv("MLX_MODEL_S2", "mlx-community/Qwen2.5-7B-Instruct-4bit"),
+                            "messages": [{"role": "user", "content": "hi"}],
+                            "max_tokens": 5,
+                        },
+                    )
+                logger.info("MLX warmup complete — model is hot")
+            except Exception as e:
+                logger.warning(f"MLX warmup failed (non-fatal): {e}")
+
+        # Warm vision server (small dummy request — 1x1 white pixel)
+        vision_url = os.getenv("NABOO_VISION_URL", "")
+        camera_url = os.getenv("NABOO_CAMERA_URL", "")
+        if vision_url and camera_url:
+            try:
+                import base64
+                logger.info(f"Vision warmup: fetching frame and pinging {vision_url}...")
+                async with httpx.AsyncClient(timeout=30.0) as client:
+                    cam_resp = await client.get(camera_url, timeout=5.0)
+                    image_b64 = base64.b64encode(cam_resp.content).decode("utf-8")
+                    await client.post(
+                        f"{vision_url}/vision",
+                        json={"image_b64": image_b64, "question": "hi", "max_tokens": 5},
+                        timeout=20.0,
+                    )
+                logger.info("Vision warmup complete — vision model is hot")
+            except Exception as e:
+                logger.warning(f"Vision warmup failed (non-fatal): {e}")
 
     # ── Lifecycle ─────────────────────────────────────────────────────────────
 

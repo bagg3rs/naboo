@@ -9,6 +9,20 @@ import os
 import signal
 import sys
 from pathlib import Path
+
+# ── Monkey-patch ThreadingInstrumentor before Strands imports ──────────────
+# Strands' Tracer.__init__ calls ThreadingInstrumentor().instrument() which
+# wraps Python threading primitives with OTel context propagation. In Naboo's
+# asyncio + MQTT thread model this causes a 15-25s stall between LLM response
+# and tool execution. Patching it to a no-op eliminates the stall entirely.
+# See: https://github.com/bagg3rs/naboo/issues/5
+try:
+    from opentelemetry.instrumentation.threading import ThreadingInstrumentor
+    ThreadingInstrumentor.instrument = lambda self, **kw: None
+    ThreadingInstrumentor.uninstrument = lambda self, **kw: None
+except ImportError:
+    pass
+
 from naboo.agent import NabooAgent
 
 PIDFILE = Path("/tmp/naboo-agent.pid")
