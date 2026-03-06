@@ -20,19 +20,40 @@ if _env_path.exists():
 # OTEL_EXPORTER_OTLP_ENDPOINT in .env causes the OTel SDK to auto-configure a
 # real BatchSpanProcessor. Strands then calls force_flush() after every span,
 # which blocks ~30s waiting for the endpoint. Setting OTEL_SDK_DISABLED=true
-# makes all OTel API calls return NoOp implementations — force_flush() is
+# makes all OTel API calls return NoOp implementations so force_flush() is
 # instant and nothing is exported.
 # See: https://github.com/bagg3rs/naboo/issues/5
 if os.environ.get("NABOO_OTEL_ENABLED", "false").lower() != "true":
     os.environ["OTEL_SDK_DISABLED"] = "true"
 
 # ── Belt-and-braces: also no-op ThreadingInstrumentor ─────────────────────
-# Strands' Tracer.__init__ calls ThreadingInstrumentor().instrument() which
+# Strands Tracer.__init__ calls ThreadingInstrumentor().instrument() which
 # wraps Python threading primitives even when OTel is disabled.
 try:
     from opentelemetry.instrumentation.threading import ThreadingInstrumentor
     ThreadingInstrumentor.instrument = lambda self, **kw: None
     ThreadingInstrumentor.uninstrument = lambda self, **kw: None
+except ImportError:
+    pass
+
+# ── Belt-and-braces: patch Tracer span methods to no-ops ─────────────────
+# Other Strands modules import get_tracer by name, so replacing the module-
+# level function has no effect. Patching the class methods directly ensures
+# _end_span (which calls force_flush) is neutralised regardless of how the
+# Tracer instance was obtained.
+try:
+    from strands.telemetry.tracer import Tracer as _Tracer
+
+    class _NoOpSpan:
+        """Dummy span that silently accepts any call."""
+        def __getattr__(self, name):
+            return lambda *a, **kw: None
+        def is_recording(self):
+            return False
+
+    _noop_span = _NoOpSpan()
+    _Tracer._start_span = lambda self, *a, **kw: _noop_span
+    _Tracer._end_span = lambda self, *a, **kw: None
 except ImportError:
     pass
 
