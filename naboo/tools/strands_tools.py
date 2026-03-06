@@ -1284,16 +1284,16 @@ def get_camera_view(question: str = "What do you see? Describe in 2-3 sentences.
         logger.info(f"TOOL: get_camera_view result in {elapsed:.1f}s: '{result[:60]}'")
         return result
 
-    except httpx.ConnectError:
+    except httpx.ConnectError as e:
         result = "I can't see anything right now — my camera isn't responding."
-        logger.warning(f"TOOL: get_camera_view camera connect error")
+        logger.warning(f"TOOL: get_camera_view connect error: {e!r} (camera={camera_url}, vision={vision_url})")
         return result
-    except httpx.TimeoutException:
+    except httpx.TimeoutException as e:
         result = "My camera took too long to respond. Try again in a moment!"
-        logger.warning(f"TOOL: get_camera_view timeout")
+        logger.warning(f"TOOL: get_camera_view timeout: {e!r}")
         return result
     except Exception as e:
-        logger.error(f"TOOL: get_camera_view error: {e}", exc_info=True)
+        logger.error(f"TOOL: get_camera_view error: {e!r}", exc_info=True)
         result = "I had trouble looking through my camera just now."
         return result
 
