@@ -3,25 +3,42 @@ Run with:
     uv run python -m naboo
 """
 
-import asyncio
-import logging
 import os
-import signal
 import sys
 from pathlib import Path
 
-# ── Monkey-patch ThreadingInstrumentor before Strands imports ──────────────
-# Strands' Tracer.__init__ calls ThreadingInstrumentor().instrument() which
-# wraps Python threading primitives with OTel context propagation. In Naboo's
-# asyncio + MQTT thread model this causes a 15-25s stall between LLM response
-# and tool execution. Patching it to a no-op eliminates the stall entirely.
+# ── Load .env early so NABOO_OTEL_ENABLED is known before OTel initialises ──
+_env_path = Path(__file__).parent.parent / "infra" / ".env"
+if _env_path.exists():
+    try:
+        from dotenv import load_dotenv
+        load_dotenv(_env_path)
+    except ImportError:
+        pass  # dotenv not available, rely on shell env
+
+# ── Disable OTel SDK when Naboo OTel is off ───────────────────────────────
+# OTEL_EXPORTER_OTLP_ENDPOINT in .env causes the OTel SDK to auto-configure a
+# real BatchSpanProcessor. Strands then calls force_flush() after every span,
+# which blocks ~30s waiting for the endpoint. Setting OTEL_SDK_DISABLED=true
+# makes all OTel API calls return NoOp implementations — force_flush() is
+# instant and nothing is exported.
 # See: https://github.com/bagg3rs/naboo/issues/5
+if os.environ.get("NABOO_OTEL_ENABLED", "false").lower() != "true":
+    os.environ["OTEL_SDK_DISABLED"] = "true"
+
+# ── Belt-and-braces: also no-op ThreadingInstrumentor ─────────────────────
+# Strands' Tracer.__init__ calls ThreadingInstrumentor().instrument() which
+# wraps Python threading primitives even when OTel is disabled.
 try:
     from opentelemetry.instrumentation.threading import ThreadingInstrumentor
     ThreadingInstrumentor.instrument = lambda self, **kw: None
     ThreadingInstrumentor.uninstrument = lambda self, **kw: None
 except ImportError:
     pass
+
+import asyncio
+import logging
+import signal
 
 from naboo.agent import NabooAgent
 
@@ -61,7 +78,7 @@ def main():
     logger = logging.getLogger("naboo")
     logger.info("Starting Naboo...")
 
-    # Initialise OTel tracing (no-op if OTEL_EXPORTER_OTLP_ENDPOINT not set)
+    # Initialise OTel tracing (no-op if NABOO_OTEL_ENABLED != true)
     from naboo import telemetry
     telemetry.setup()
 
