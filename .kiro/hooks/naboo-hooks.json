@@ -1,0 +1,25 @@
+{
+  "hooks": [
+    {
+      "name": "Test reminder on Python changes",
+      "description": "Remind to run E2E test after editing agent code",
+      "event": "fileEdited",
+      "patterns": [
+        "naboo/**/*.py",
+        "infra/vision_server.py"
+      ],
+      "action": "Ask Kiro",
+      "instructions": "A Python file in the naboo agent was just edited. If the change is significant (not just a comment or log line), remind me to:\n1. Restart the agent on .50: `pkill -f 'python3 -m naboo'; cd ~/naboo && PYTHONUNBUFFERED=1 nohup uv run python3 -u -m naboo > /tmp/naboo.log 2>&1 &`\n2. Run the basic test: `uv run python3 scripts/test_e2e.py 'what is 2 plus 2?'` — should complete in ≤5s\n3. If vision-related, also run: `uv run python3 scripts/test_e2e.py 'what do you see right now?'` — should complete in ≤15s\n\nOnly remind once per editing session, not on every save."
+    },
+    {
+      "name": "Env example sync reminder",
+      "description": "Remind to update .env.example when .env is changed",
+      "event": "fileEdited",
+      "patterns": [
+        "infra/.env"
+      ],
+      "action": "Ask Kiro",
+      "instructions": "infra/.env was just edited. Check if any new environment variables were added. If so, add commented examples to infra/.env.example (never the actual values). The .env is gitignored; .env.example is committed."
+    }
+  ]
+}
