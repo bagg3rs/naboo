@@ -70,16 +70,52 @@ Test result: [timing + pass/fail]
 
 The OpenClaw agent reviews PRs, handles cherry-picking to the public repo, and merges.
 
-## Public vs Private Repo
+## Two-Repo Architecture
 
-- This may be a private dev repo — push freely
-- The public repo (`bagg3rs/naboo`) is managed by OpenClaw
-- Do NOT push secrets — `infra/.env` is gitignored; update `infra/.env.example` instead
-- Chapter docs in `docs/` get published; keep them personal-info-free
+### Repos
+
+| Repo | Visibility | Purpose |
+|------|-----------|---------|
+| `bagg3rs/naboo-dev` | **Private** | Your workspace. WIP, specs, Kiro tasks, messy history welcome |
+| `bagg3rs/naboo` | **Public** | Portfolio + GitHub Pages. Clean history only. Managed by OpenClaw |
+
+### Local remotes (on Mac mini .50 at `~/naboo/`)
+
+```bash
+origin  git@github.com:bagg3rs/naboo.git      # public
+dev     git@github.com:bagg3rs/naboo-dev.git  # private
+```
+
+### Your Workflow
+
+1. All work goes to `naboo-dev` (private)
+2. Create branches from `dev/main`, push to `dev`
+3. Open PRs against `naboo-dev/main`
+4. OpenClaw reviews, cherry-picks or squash-merges clean commits to `naboo/main`
+5. **Never push directly to `origin` (public repo)** — OpenClaw owns that
+
+### Specs
+
+`.kiro/specs/` lives in `naboo-dev` only. Specs are your work queue, not public content.  
+Spec status:
+- `production-deploy.md` — launchd auto-start + vision E2E test
+- `auto-mode.md` — port vision-guided autonomous exploration
+- `chapter-4.md` — Eyes Open build log chapter (draft here, publish after Rich review)
+
+### Git hygiene on .50
+
+Before starting any work, sync from remote to avoid conflicts:
+```bash
+git fetch dev && git reset --hard dev/main
+```
+
+### Do NOT push secrets
+
+`infra/.env` is gitignored — update `infra/.env.example` instead.
 
 ## What OpenClaw Handles (Don't Duplicate)
 
-- Publishing chapters to the public portfolio repo
-- Writing GitHub issue specs
-- Merging PRs to public `main`
+- Cherry-picking / squash-merging to the public `naboo` repo
+- GitHub issue management
 - Memory in `MEMORY.md` / `memory/YYYY-MM-DD.md`
+- Publishing GitHub Pages (docs go live when merged to public main)
