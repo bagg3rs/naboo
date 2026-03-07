@@ -87,6 +87,24 @@ Now the Mac mini boots, the MLX server starts, and Naboo's agent can connect whe
 
 **Client ID conflicts break everything.** MQTT brokers enforce unique client IDs. Two agents with the same ID fight each other in an infinite reconnect loop — connect, get CONNACK, immediately get kicked, repeat. Add a UUID to your client ID. It costs nothing.
 
+**MLX will grind forever without a token limit.** This one hurt. Something triggered a Naboo query that sent a prompt to the MLX server — and the server got stuck generating with no client waiting for the response. The client disconnected, the request stayed in-flight, and `mlx_lm.server` ran at 100% CPU for 19 hours overnight. Power draw on the mini went from ~5W idle to 30W+.
+
+Root cause: `mlx_lm.server` has no disconnect handling. If a client drops mid-request, generation continues until it finishes — which, with no token cap, could mean forever.
+
+Fix: always set `--max-tokens` at server startup.
+
+```bash
+mlx_lm.server \
+  --model mlx-community/Qwen2.5-7B-Instruct-4bit \
+  --host 0.0.0.0 \
+  --port 11435 \
+  --max-tokens 2048
+```
+
+This caps any single response at 2048 tokens regardless of what the request asks for. Naboo's answers are never that long anyway. A runaway request now terminates in seconds, not overnight.
+
+**The idle power cost is real.** Even with no requests in-flight, `mlx_lm.server` spins its thread pool at near-100% CPU. This is by design — MLX busy-waits for incoming work to minimise first-token latency. Great for responsiveness, rough on power bills. The fix: use a cron to stop the server at night and restart it in the morning. Naboo gets fast responses during waking hours; the mini sleeps properly at night.
+
 ---
 
 ## End Result
