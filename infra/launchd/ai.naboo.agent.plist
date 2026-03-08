@@ -51,10 +51,7 @@
         <string>eu-west-2</string>
         <key>BEDROCK_MODEL_ID</key>
         <string>eu.anthropic.claude-haiku-4-5-20251001-v1:0</string>
-        <key>PIRATEWEATHER_API_KEY</key>
-        <string>HJj28HLuOxCODzmstXMZ7v09RD25Hf5d</string>
-        <key>BIRDFEEDER_STATS_URL</key>
-        <string>http://192.168.0.170:8080</string>
+        <!-- PIRATEWEATHER_API_KEY and BIRDFEEDER_STATS_URL loaded from infra/.env by python-dotenv -->
     </dict>
 
     <key>StandardOutPath</key>
