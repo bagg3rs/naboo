@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>ai.naboo.agent</string>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/rb/naboo</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/rb/.local/bin/uv</string>
+        <string>run</string>
+        <string>python3</string>
+        <string>-u</string>
+        <string>-m</string>
+        <string>naboo</string>
+    </array>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/Users/rb/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+        <key>HOME</key>
+        <string>/Users/rb</string>
+        <key>PYTHONUNBUFFERED</key>
+        <string>1</string>
+        <!-- Naboo config — mirrors infra/.env -->
+        <key>MQTT_BROKER</key>
+        <string>192.168.0.50</string>
+        <key>MQTT_PORT</key>
+        <string>1883</string>
+        <key>MLX_HOST</key>
+        <string>http://192.168.0.50:11435</string>
+        <key>MLX_MODEL_S1</key>
+        <string>mlx-community/Qwen2.5-7B-Instruct-4bit</string>
+        <key>MLX_MODEL_S2</key>
+        <string>mlx-community/Qwen2.5-7B-Instruct-4bit</string>
+        <key>NABOO_CAMERA_URL</key>
+        <string>http://192.168.0.163/capture</string>
+        <key>NABOO_VISION_URL</key>
+        <string>http://192.168.0.50:11436</string>
+        <key>NABOO_OTEL_ENABLED</key>
+        <string>false</string>
+        <key>OTEL_PYTHON_DISABLED_INSTRUMENTATIONS</key>
+        <string>threading</string>
+        <key>AWS_REGION</key>
+        <string>eu-west-2</string>
+        <key>BEDROCK_REGION</key>
+        <string>eu-west-2</string>
+        <key>BEDROCK_MODEL_ID</key>
+        <string>eu.anthropic.claude-haiku-4-5-20251001-v1:0</string>
+        <key>PIRATEWEATHER_API_KEY</key>
+        <string>HJj28HLuOxCODzmstXMZ7v09RD25Hf5d</string>
+        <key>BIRDFEEDER_STATS_URL</key>
+        <string>http://192.168.0.170:8080</string>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>/tmp/naboo.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/tmp/naboo-err.log</string>
+
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+</dict>
+</plist>
