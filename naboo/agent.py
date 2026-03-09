@@ -348,11 +348,15 @@ class NabooAgent:
         model_config = self.router.select_model(complexity)
         model = self.router.get_model_instance(model_config)
 
-        # Select tools based on interaction source:
+        # Select tools based on interaction source and complexity:
+        # - Pre-fetched queries → no tools (data already injected)
+        # - SIMPLE queries → no tools (facts, math, greetings — no tools needed)
         # - HA voice pipeline (ha_*) → exclude robot_speak/robot_sound (HA handles TTS)
-        # - Physical buttons / standalone → include all tools
+        # - Everything else → all tools
         if no_tools:
             tools = []
+        elif complexity == QueryComplexity.SIMPLE:
+            tools = []  # Simple queries don't need tools — saves ~9s of prompt overhead
         elif conversation_id.startswith("ha_"):
             tools = [t for t in ALL_TOOLS if t not in (robot_speak, robot_sound)]
         else:
