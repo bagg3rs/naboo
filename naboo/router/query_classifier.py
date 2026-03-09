@@ -102,6 +102,13 @@ class QueryClassifier:
     # Search/sports queries stay on CURRENT_INFO (7b handles search results better).
     TOOL_BACKED_PATTERNS = [
         r'\b(weather|forecast|temperature|rain|sunny|cloudy|windy)\b',
+        r'\bwhat (can you|do you) see\b',
+        r'\bcan you see (me|us|anything)\b',
+        r'\blook around\b',
+        r'\bwhat.s (in the|in this) (room|kitchen|hallway)\b',
+        r'\bshow me\b',
+        r'\buse.* camera\b',
+        r'\bbird.*(stats?|feeder|count|species)\b',
     ]
     
     def __init__(

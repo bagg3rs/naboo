@@ -295,6 +295,39 @@ class NabooAgent:
                 return enriched, True
             except Exception as e:
                 logger.warning(f"Fixture pre-fetch failed: {e}")
+        # ── Vision pre-fetch ──────────────────────────────────────────────────
+        is_vision = (
+            re.search(r'\bwhat (can you|do you) see\b', q)
+            or re.search(r'\bcan you see (me|us|anything|the)\b', q)
+            or re.search(r'\blook around\b', q)
+            or re.search(r'\bwhat.s (in the|in this) (room|kitchen|hallway|garden)\b', q)
+            or re.search(r'\bshow me\b', q)
+            or re.search(r'\buse.* camera\b', q)
+            or re.search(r'\bwhat do you see\b', q)
+            or re.search(r'\bwhat.s (around|ahead|behind|there)\b', q)
+        )
+        if is_vision:
+            try:
+                import httpx, base64
+                camera_url = os.getenv("NABOO_CAMERA_URL", "")
+                vision_url = os.getenv("NABOO_VISION_URL", "")
+                if camera_url and vision_url:
+                    with telemetry.span("naboo.prefetch.vision"):
+                        cam_resp = httpx.get(camera_url, timeout=5.0)
+                        cam_resp.raise_for_status()
+                        image_b64 = base64.b64encode(cam_resp.content).decode("utf-8")
+                        vis_resp = httpx.post(
+                            f"{vision_url}/vision",
+                            json={"image_b64": image_b64, "question": question, "max_tokens": 200},
+                            timeout=20.0,
+                        )
+                        vis_resp.raise_for_status()
+                        description = vis_resp.json().get("description", "")
+                    enriched = f"{question}\n\n[Camera view: {description}]"
+                    logger.info(f"Pre-fetched vision: {description[:80]}...")
+                    return enriched, True
+            except Exception as e:
+                logger.warning(f"Vision pre-fetch failed: {e}")
         return question, False
 
     def _build_strands_agent(self, question: str, no_tools: bool = False) -> tuple["Agent", dict]:
