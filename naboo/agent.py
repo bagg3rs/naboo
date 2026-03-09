@@ -457,24 +457,13 @@ class NabooAgent:
             except Exception as e:
                 logger.warning(f"MLX warmup failed (non-fatal): {e}")
 
-        # Warm vision server (small dummy request — 1x1 white pixel)
-        vision_url = os.getenv("NABOO_VISION_URL", "")
-        camera_url = os.getenv("NABOO_CAMERA_URL", "")
-        if vision_url and camera_url:
-            try:
-                import base64
-                logger.info(f"Vision warmup: fetching frame and pinging {vision_url}...")
-                async with httpx.AsyncClient(timeout=30.0) as client:
-                    cam_resp = await client.get(camera_url, timeout=5.0)
-                    image_b64 = base64.b64encode(cam_resp.content).decode("utf-8")
-                    await client.post(
-                        f"{vision_url}/vision",
-                        json={"image_b64": image_b64, "question": "hi", "max_tokens": 5},
-                        timeout=20.0,
-                    )
-                logger.info("Vision warmup complete — vision model is hot")
-            except Exception as e:
-                logger.warning(f"Vision warmup failed (non-fatal): {e}")
+        # Warm vision server — SKIP at startup to avoid GPU memory contention
+        # with the MLX text model. Vision model warms on first actual vision request.
+        # On 16GB M4, loading both models simultaneously causes memory thrashing
+        # and makes the first text query take 25-40s instead of 1-3s.
+        # vision_url = os.getenv("NABOO_VISION_URL", "")
+        # camera_url = os.getenv("NABOO_CAMERA_URL", "")
+        logger.info("Vision warmup skipped (deferred to first vision request to avoid GPU contention)")
 
     # ── Lifecycle ─────────────────────────────────────────────────────────────
 
