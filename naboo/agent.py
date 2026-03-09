@@ -98,6 +98,11 @@ def _clean_response(text: str) -> str:
     if plain_str:
         return plain_str.group(1).strip()
 
+    # Bracket annotation: [Use robot_speak "Hello!"] or [Use tool "text"]
+    bracket_str = re.match(r'^\[Use \w+\s+["\'](.+?)["\']\]\s*$', text, re.DOTALL)
+    if bracket_str:
+        return bracket_str.group(1).strip()
+
     # JSON arg with or without parens: robot_speak({"text":"..."})
     json_arg = re.match(r'^\w+[\s(]+(\{.+\})[)\s]*$', text, re.DOTALL)
     if json_arg:
