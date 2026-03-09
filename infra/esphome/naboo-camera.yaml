@@ -1,0 +1,130 @@
+# Naboo Camera — XIAO ESP32S3 Sense + OV5640
+# Flash: esphome run naboo-camera.yaml --device /dev/cu.usbmodem*
+# After first flash, OTA updates work wirelessly.
+
+substitutions:
+  device_name: naboo-camera
+  friendly_name: Naboo Camera
+  static_ip: 192.168.0.163
+
+esphome:
+  name: ${device_name}
+  friendly_name: ${friendly_name}
+  platformio_options:
+    board_build.flash_mode: dio
+    board_build.arduino.memory_type: qio_opi
+
+esp32:
+  board: seeed_xiao_esp32s3
+  variant: esp32s3
+  framework:
+    type: arduino
+
+psram:
+  mode: octal
+  speed: 80MHz
+
+# --- WiFi ---
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  manual_ip:
+    static_ip: ${static_ip}
+    gateway: 192.168.0.254
+    subnet: 255.255.255.0
+  # Fallback AP if WiFi fails
+  ap:
+    ssid: "${device_name}"
+    password: "naboo12345"
+
+captive_portal:
+
+# --- HA Integration ---
+api:
+  encryption:
+    key: !secret api_key
+
+ota:
+  - platform: esphome
+    password: !secret ota_password
+
+# --- Logging ---
+logger:
+  level: INFO
+
+# --- I2C for camera ---
+i2c:
+  id: i2c_bus_0
+  sda: GPIO40
+  scl: GPIO39
+  frequency: 100kHz
+
+# --- Camera ---
+esp32_camera:
+  name: "${friendly_name}"
+  external_clock:
+    pin: GPIO10
+    frequency: 20MHz
+  i2c_id: i2c_bus_0
+  data_pins:
+    - GPIO15  # D0 / Y2
+    - GPIO17  # D1 / Y3
+    - GPIO18  # D2 / Y4
+    - GPIO16  # D3 / Y5
+    - GPIO14  # D4 / Y6
+    - GPIO12  # D5 / Y7
+    - GPIO11  # D6 / Y8
+    - GPIO48  # D7 / Y9
+  vsync_pin: GPIO38
+  href_pin: GPIO47
+  pixel_clock_pin: GPIO13
+  
+  # Image settings
+  resolution: 800x600        # SVGA — good balance for VLM input
+  jpeg_quality: 10            # High quality (10=best, 63=worst)
+  vertical_flip: true         # Camera mounted upside-down on Naboo
+  horizontal_mirror: false
+  
+  # Frame buffer
+  frame_buffer_count: 2
+  frame_buffer_location: PSRAM
+  
+  # Framerate
+  max_framerate: 10fps
+  idle_framerate: 0.1fps      # Low power when nobody's watching
+
+# --- Web server for /capture endpoint ---
+# This gives us the same HTTP snapshot the vision server expects
+esp32_camera_web_server:
+  - port: 80
+    mode: snapshot            # GET / returns JPEG snapshot
+  - port: 8080
+    mode: stream              # MJPEG stream on :8080
+
+# --- Status LED ---
+light:
+  - platform: status_led
+    name: "Status LED"
+    pin:
+      number: GPIO21
+      inverted: true
+
+# --- Diagnostics ---
+sensor:
+  - platform: wifi_signal
+    name: "WiFi Signal"
+    update_interval: 60s
+  - platform: uptime
+    name: "Uptime"
+    update_interval: 60s
+
+button:
+  - platform: restart
+    name: "Restart"
+
+text_sensor:
+  - platform: wifi_info
+    ip_address:
+      name: "IP Address"
+    ssid:
+      name: "Connected SSID"
