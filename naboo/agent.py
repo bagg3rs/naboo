@@ -335,7 +335,8 @@ class NabooAgent:
                 logger.warning(f"Vision pre-fetch failed: {e}")
         return question, False
 
-    def _build_strands_agent(self, question: str, no_tools: bool = False) -> tuple["Agent", dict]:
+    def _build_strands_agent(self, question: str, no_tools: bool = False,
+                             conversation_id: str = "") -> tuple["Agent", dict]:
         """Build Strands agent with the right model for this question. Returns (agent, route_attrs)."""
         complexity = self.classifier.classify_query(question)
 
@@ -347,10 +348,21 @@ class NabooAgent:
         model_config = self.router.select_model(complexity)
         model = self.router.get_model_instance(model_config)
 
+        # Select tools based on interaction source:
+        # - HA voice pipeline (ha_*) → exclude robot_speak/robot_sound (HA handles TTS)
+        # - Physical buttons / standalone → include all tools
+        if no_tools:
+            tools = []
+        elif conversation_id.startswith("ha_"):
+            tools = [t for t in ALL_TOOLS if t not in (robot_speak, robot_sound)]
+        else:
+            tools = ALL_TOOLS
+
         logger.info(
             f"Routing '{question[:50]}...' → "
             f"{complexity.value} → {model_config.provider}/{model_config.model_id}"
             + (" [no-tools, pre-fetched]" if no_tools else "")
+            + (" [ha-voice, no speak/sound]" if conversation_id.startswith("ha_") and not no_tools else "")
         )
 
         route_attrs = {
@@ -358,12 +370,13 @@ class NabooAgent:
             "provider": model_config.provider,
             "model": model_config.model_id,
             "no_tools": str(no_tools),
+            "source": "ha_voice" if conversation_id.startswith("ha_") else "standalone",
         }
 
         return Agent(
             model=model,
             system_prompt=self.system_prompt,
-            tools=[] if no_tools else ALL_TOOLS,
+            tools=tools,
         ), route_attrs
 
     async def _process_question(self, question: str, user: str, conversation_id: str = "") -> str:
@@ -384,7 +397,9 @@ class NabooAgent:
 
             # Route
             with telemetry.span("naboo.route") as route_span:
-                agent, route_attrs = self._build_strands_agent(enriched_question, no_tools=no_tools)
+                agent, route_attrs = self._build_strands_agent(
+                    enriched_question, no_tools=no_tools, conversation_id=conversation_id
+                )
                 for k, v in route_attrs.items():
                     route_span.set_attribute(k, v)
 
