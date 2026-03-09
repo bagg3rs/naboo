@@ -42,7 +42,7 @@ captive_portal:
 # --- HA Integration ---
 api:
   encryption:
-    key: !secret api_key
+    key: !secret api_encryption_key
 
 ota:
   - platform: esphome

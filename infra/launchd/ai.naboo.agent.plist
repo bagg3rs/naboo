@@ -38,7 +38,7 @@
         <key>MLX_MODEL_S2</key>
         <string>mlx-community/Qwen2.5-7B-Instruct-4bit</string>
         <key>NABOO_CAMERA_URL</key>
-        <string>http://192.168.0.163/capture</string>
+        <string>http://192.168.0.163/</string>
         <key>NABOO_VISION_URL</key>
         <string>http://192.168.0.50:11436</string>
         <key>NABOO_OTEL_ENABLED</key>
