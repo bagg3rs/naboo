@@ -24,6 +24,32 @@ CAMERA_SNAPSHOT = os.environ.get("CAMERA_SNAPSHOT", "http://192.168.0.163/")
 
 app = FastAPI(title="Naboo Controller")
 
+HA_URL = "http://192.168.0.201:8123"
+HA_TTS_ENTITY = "tts.home_assistant_cloud"
+HA_MEDIA_PLAYER = "media_player.home_assistant_voice_093cd7_media_player"
+HA_TOKEN = os.environ.get("HA_TOKEN", "")
+
+
+def _ha_tts(text: str):
+    """Send TTS to HA Voice speaker."""
+    try:
+        import urllib.request
+        payload = json.dumps({
+            "entity_id": HA_TTS_ENTITY,
+            "media_player_entity_id": HA_MEDIA_PLAYER,
+            "message": text,
+        }).encode()
+        req = urllib.request.Request(
+            f"{HA_URL}/api/services/tts/speak",
+            data=payload,
+            headers={"Content-Type": "application/json", "Authorization": f"Bearer {HA_TOKEN}"},
+            method="POST",
+        )
+        urllib.request.urlopen(req, timeout=3)
+        log.info("TTS: %s", text[:80])
+    except Exception as e:
+        log.error("TTS error: %s", e)
+
 # ── MQTT ──────────────────────────────────────────────────────────────────────
 
 mqtt_client = mqtt.Client(client_id="naboo-web-controller", protocol=mqtt.MQTTv5)
@@ -145,6 +171,14 @@ HTML = """<!DOCTYPE html>
 </div>
 
 <button class="explore-btn" id="exploreBtn" onclick="toggleExplore()">🔍 Explore</button>
+
+<div style="display:flex; gap:8px; margin:10px 0; width:100%; max-width:640px;">
+  <input type="text" id="ttsInput" placeholder="Type to speak..." 
+         style="flex:1; padding:10px; border-radius:8px; border:1px solid #a855f7; background:#16213e; color:#e0e0e0; font-size:1em;"
+         onkeydown="if(event.key==='Enter')sendTTS()">
+  <button onclick="sendTTS()" style="padding:10px 16px; border-radius:8px; border:none; background:#a855f7; color:white; font-size:1em; cursor:pointer;">🔊</button>
+</div>
+
 <div class="status" id="status">Connecting...</div>
 
 <script>
@@ -214,6 +248,15 @@ function toggleExplore() {
   btn.textContent = exploring ? '🛑 Stop Explore' : '🔍 Explore';
   ws.send(JSON.stringify({cmd: exploring ? 'explore' : 'stop_explore'}));
 }
+
+function sendTTS() {
+  const input = document.getElementById('ttsInput');
+  const text = input.value.trim();
+  if (text) {
+    ws.send(JSON.stringify({cmd: 'tts', text: text}));
+    input.value = '';
+  }
+}
 </script>
 </body>
 </html>""".replace("CAMERA_STREAM_URL", CAMERA_STREAM).replace("CAMERA_SNAPSHOT_URL", CAMERA_SNAPSHOT)
@@ -250,6 +293,10 @@ async def websocket_endpoint(ws: WebSocket):
                     "user": "web-controller",
                     "conversation_id": f"web-{id(ws)}",
                 }))
+            elif cmd == "tts":
+                text = data.get("text", "")
+                if text:
+                    _ha_tts(text)
             else:
                 send_command(cmd)
     except WebSocketDisconnect:

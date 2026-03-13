@@ -667,6 +667,12 @@ def process_command(topic_str, payload):
             is_moving = True
             move_direction = "forward"
             move_color = (0, 255, 0)  # Green
+        elif ct == "force_forward":
+            # Override collision block — use with caution
+            mbot2.forward(speed=sp)
+            is_moving = True
+            move_direction = "forward"
+            move_color = (255, 165, 0)  # Orange = forced
         elif ct == "move_backward":
             # Backward always allowed - helps get unstuck
             mbot2.backward(speed=sp)
