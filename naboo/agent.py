@@ -558,8 +558,8 @@ class NabooAgent:
                 from .explore import ExploreController
                 if not self._explore:
                     self._explore = ExploreController(self._mqtt)
-                    # Wire telemetry — already subscribed, just add callback
-                    self._explore._last_telem = time.monotonic()
+                    # Don't set _last_telem — let it stay 0 until real telemetry arrives
+                    # This way the timeout check is skipped if CyberPi isn't connected
                 await self._explore.start()
                 return "Explore mode activated! I'll use my camera to navigate and tell you what I see."
 
