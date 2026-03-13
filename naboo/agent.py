@@ -182,9 +182,11 @@ class NabooAgent:
         return (
             f"{scene}"
             f"Play I Spy! Pick ONE specific object. "
-            f"Say EXACTLY: 'I spy with my little eye, something beginning with [letter]!' "
+            f"Say EXACTLY: 'I spy with my little eye, something beginning with [letter], [letter] for [example word]!' "
+            f"For example: 'something beginning with B, B for banana!' "
             f"Then on a NEW line write: OBJECT: [the full object name] "
             f"Pick something a 6-year-old could guess — not too hard, not too easy. "
+            f"The example word must NOT be the answer — just a word starting with the same letter. "
             f"No emojis. Keep it short and fun!"
         )
 
@@ -287,8 +289,17 @@ class NabooAgent:
         # If there's an active I Spy game (< 5 min old), check if this is a guess
         if self._ispy_state and (time.time() - self._ispy_state["timestamp"] < 300):
             game = self._ispy_state
+            # Exit phrases clear the game
+            exit_phrases = (
+                re.search(r'\b(stop|quit|end|finish|done|no more|something else|different)\b', q)
+                or re.search(r'\b(new game|play something|don.t want)\b', q)
+            )
+            if exit_phrases:
+                logger.info("I Spy game ended by user request")
+                self._ispy_state = None
+                # Fall through to normal processing
             # Not a new "play i spy" request — treat as a guess
-            if not (re.search(r'\bi\s*spy\b', q) or re.search(r'\bplay.* i\s*spy\b', q)):
+            elif not (re.search(r'\bi\s*spy\b', q) or re.search(r'\bplay.* i\s*spy\b', q)):
                 guess = question.strip().rstrip('?').strip()
                 letter = game["letter"]
                 obj = game.get("object", "")
@@ -300,10 +311,17 @@ class NabooAgent:
                         f"You are playing I Spy. You said 'something beginning with {letter}'. "
                         f"The object you were thinking of was: {obj}. "
                         f"The child guessed: '{guess}'. "
-                        f"If their guess is close or correct, celebrate! Say 'Yes! Well done!' "
+                        f"If their guess matches or is very close to '{obj}', celebrate enthusiastically! "
+                        f"Say 'Yes! Well done! It was the {obj}!' and clear the game. "
                         f"If wrong but starts with the right letter, say 'Good guess but no! Try again!' "
-                        f"Keep it fun and encouraging. One short sentence."
+                        f"Keep it fun and encouraging. One or two short sentences. No emojis."
                     )
+                    # Check for correct guess and clear game
+                    guess_lower = guess.lower().strip()
+                    obj_lower = obj.lower().strip()
+                    if obj_lower in guess_lower or guess_lower in obj_lower:
+                        self._ispy_state = None  # Game over!
+                        logger.info(f"I Spy game won! Guess '{guess}' matched '{obj}'")
                 else:
                     enriched = (
                         f"You are playing I Spy. You said 'something beginning with {letter}'. "
