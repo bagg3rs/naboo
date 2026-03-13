@@ -165,6 +165,7 @@ HTML = """<!DOCTYPE html>
   <span>📏 <span id="dist">--</span>cm</span>
   <span>🔋 <span id="batt">--</span>%</span>
   <span>🧭 <span id="heading">--</span>°</span>
+  <span>📐 <span id="tilt">--</span></span>
 </div>
 
 <div class="controls">
@@ -205,6 +206,10 @@ ws.onmessage = (e) => {
     document.getElementById('dist').textContent = Math.round(data.d || 0);
     document.getElementById('batt').textContent = Math.round(data.b || 0);
     document.getElementById('heading').textContent = Math.round(data.h || 0);
+    const roll = Math.round(data.roll || 0);
+    const pitch = Math.round(data.pitch || 0);
+    const az = data.az || 0;
+    document.getElementById('tilt').textContent = az > 5 ? '🙃 UPSIDE DOWN' : `R${roll}° P${pitch}°`;
   } else if (data.type === 'collision') {
     document.getElementById('videoBox').classList.add('collision');
     setTimeout(() => document.getElementById('videoBox').classList.remove('collision'), 1000);

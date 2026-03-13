@@ -762,7 +762,7 @@ def connect_wifi():
     return True
 
 def send_telemetry():
-    """Send sensor data including odometry"""
+    """Send sensor data including odometry and IMU"""
     global mqtt_client
     try:
         # Update odometry from encoders
@@ -776,7 +776,13 @@ def send_telemetry():
             "d": dist,
             "b": batt,
             "dm": odom["dist_mm"],
-            "h": odom["heading"]
+            "h": odom["heading"],
+            "roll": cyberpi.get_roll(),
+            "pitch": cyberpi.get_pitch(),
+            "yaw": cyberpi.get_yaw(),
+            "ax": cyberpi.get_acc("x"),
+            "ay": cyberpi.get_acc("y"),
+            "az": cyberpi.get_acc("z"),
         })
         mqtt_client.publish("mbot2/telemetry", data)
     except:
