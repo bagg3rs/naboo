@@ -200,7 +200,7 @@ class NabooAgent:
         import uuid as _uuid
         client = mqtt.Client(
             mqtt.CallbackAPIVersion.VERSION2,
-            client_id=f"naboo-agent-{_uuid.uuid4().hex[:8]}",
+            client_id="naboo-agent",  # Fixed ID so Mosquitto kicks stale connections on restart
             clean_session=True,
         )
 
