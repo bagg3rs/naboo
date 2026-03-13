@@ -72,8 +72,8 @@ mqtt_client.on_message = on_message
 COMMANDS = {
     "forward": {"command_type": "move_forward", "parameters": {"speed": 30}},
     "backward": {"command_type": "move_backward", "parameters": {"speed": 25}},
-    "left": {"command_type": "turn_left", "parameters": {"speed": 35}},
-    "right": {"command_type": "turn_right", "parameters": {"speed": 35}},
+    "left": {"command_type": "turn_left", "parameters": {"speed": 25}},
+    "right": {"command_type": "turn_right", "parameters": {"speed": 25}},
     "stop": {"command_type": "stop", "parameters": {"speed": 0}},
 }
 
