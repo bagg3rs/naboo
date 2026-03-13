@@ -282,16 +282,16 @@ class ExploreController:
         self.mqtt.publish("mbot2/command", json.dumps({"command_type": cmd, "parameters": {"speed": speed}}))
 
     def _speak(self, text: str):
-        # Announce via HA Voice TTS (Ryan Cheerful = Naboo's voice)
+        # Announce via HA Voice TTS (tts.speak works, cloud_say doesn't)
         try:
             import urllib.request
             payload = json.dumps({
-                "entity_id": HA_MEDIA_PLAYER,
+                "entity_id": HA_TTS_ENTITY,
+                "media_player_entity_id": HA_MEDIA_PLAYER,
                 "message": text,
-                "options": {"voice": "RyanNeural||cheerful"},
             }).encode()
             req = urllib.request.Request(
-                f"{HA_URL}/api/services/tts/cloud_say",
+                f"{HA_URL}/api/services/tts/speak",
                 data=payload,
                 headers={
                     "Content-Type": "application/json",
