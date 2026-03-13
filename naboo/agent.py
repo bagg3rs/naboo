@@ -342,6 +342,20 @@ class NabooAgent:
                         )
                         return enriched, True
 
+                # For I Spy with no cache, skip VLM entirely and play from imagination
+                # (VLM takes 25s + model swap kills MLX = 90s total, way over HA timeout)
+                if is_ispy and not self._vision_cache:
+                    logger.info("No vision cache — playing I Spy from imagination")
+                    enriched = (
+                        "Play I Spy! You are in a family living room. Think of a common household "
+                        "object that a 6-year-old would recognise. "
+                        "Say 'I spy with my little eye, something beginning with [first letter]!' "
+                        "Pick something fun — not too hard, not too easy. "
+                        "Do NOT reveal what it is yet. Wait for them to guess. "
+                        "Keep it fun and playful!"
+                    )
+                    return enriched, True
+
                 if camera_url and vision_url:
                     with telemetry.span("naboo.prefetch.vision"):
                         cam_resp = httpx.get(camera_url, timeout=5.0)
