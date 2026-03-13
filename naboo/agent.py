@@ -170,6 +170,23 @@ class NabooAgent:
         self._identified_users: dict = {}
         # Cache last vision description to avoid repeated VLM calls (GPU memory swap is 25s+)
         self._vision_cache: Optional[dict] = None  # {"description": str, "timestamp": float}
+        # I Spy game state — persists across conversations so guesses work
+        self._ispy_state: Optional[dict] = None  # {"object": str, "letter": str, "timestamp": float}
+
+    @staticmethod
+    def _ispy_prompt(context: str = "") -> str:
+        """Build the I Spy game prompt. Context is optional scene description."""
+        scene = f"You can see the following: {context}\n\n" if context else (
+            "You are in a family living room. Think of a common household object. "
+        )
+        return (
+            f"{scene}"
+            f"Play I Spy! Pick ONE specific object. "
+            f"Say EXACTLY: 'I spy with my little eye, something beginning with [letter]!' "
+            f"Then on a NEW line write: OBJECT: [the full object name] "
+            f"Pick something a 6-year-old could guess — not too hard, not too easy. "
+            f"No emojis. Keep it short and fun!"
+        )
 
     def _detect_user_introduction(self, text: str) -> Optional[str]:
         """
@@ -265,6 +282,37 @@ class NabooAgent:
         """
         import re
         q = question.lower()
+
+        # ── I Spy guess detection ─────────────────────────────────────────────
+        # If there's an active I Spy game (< 5 min old), check if this is a guess
+        if self._ispy_state and (time.time() - self._ispy_state["timestamp"] < 300):
+            game = self._ispy_state
+            # Not a new "play i spy" request — treat as a guess
+            if not (re.search(r'\bi\s*spy\b', q) or re.search(r'\bplay.* i\s*spy\b', q)):
+                guess = question.strip().rstrip('?').strip()
+                letter = game["letter"]
+                obj = game.get("object", "")
+                logger.info(f"I Spy guess: '{guess}' (letter={letter}, object={obj})")
+
+                # Check if the guess starts with the right letter
+                if guess and guess[0].lower() == letter.lower():
+                    enriched = (
+                        f"You are playing I Spy. You said 'something beginning with {letter}'. "
+                        f"The object you were thinking of was: {obj}. "
+                        f"The child guessed: '{guess}'. "
+                        f"If their guess is close or correct, celebrate! Say 'Yes! Well done!' "
+                        f"If wrong but starts with the right letter, say 'Good guess but no! Try again!' "
+                        f"Keep it fun and encouraging. One short sentence."
+                    )
+                else:
+                    enriched = (
+                        f"You are playing I Spy. You said 'something beginning with {letter}'. "
+                        f"The child guessed: '{guess}'. That doesn't start with {letter}! "
+                        f"Give them a fun hint. Say something like 'Nope! Remember, it begins with {letter}! Here's a clue...' "
+                        f"Give a small hint about the object ({obj}). Keep it playful. One short sentence."
+                    )
+                return enriched, True
+
         # ── Weather pre-fetch ─────────────────────────────────────────────────
         is_weather = (
             re.search(r'\b(weather|forecast|raining|sunny|cloudy|windy)\b', q)
@@ -332,28 +380,15 @@ class NabooAgent:
                     if cache_age < 300:  # 5 minutes
                         description = self._vision_cache["description"]
                         logger.info(f"Using cached vision ({cache_age:.0f}s old) for I Spy")
-                        enriched = (
-                            f"You can see the following: {description}\n\n"
-                            f"Play I Spy! Pick ONE specific object you can see in the description above. "
-                            f"Say 'I spy with my little eye, something beginning with [first letter]!' "
-                            f"Pick something a child could guess — not too hard, not too easy. "
-                            f"Do NOT reveal what it is yet. Wait for them to guess. "
-                            f"Keep it fun and playful!"
-                        )
+                        enriched = self._ispy_prompt(description)
                         return enriched, True
 
                 # For I Spy with no cache, skip VLM entirely and play from imagination
                 # (VLM takes 25s + model swap kills MLX = 90s total, way over HA timeout)
                 if is_ispy and not self._vision_cache:
                     logger.info("No vision cache — playing I Spy from imagination")
-                    enriched = (
-                        "Play I Spy! You are in a family living room. Think of a common household "
-                        "object that a 6-year-old would recognise. "
-                        "Say 'I spy with my little eye, something beginning with [first letter]!' "
-                        "Pick something fun — not too hard, not too easy. "
-                        "Do NOT reveal what it is yet. Wait for them to guess. "
-                        "Keep it fun and playful!"
-                    )
+                    enriched = self._ispy_prompt()
+                    return enriched, True
                     return enriched, True
 
                 if camera_url and vision_url:
@@ -376,14 +411,7 @@ class NabooAgent:
 
                     # ── Game mode: I Spy ──────────────────────────────────
                     if is_ispy:
-                        enriched = (
-                            f"You can see the following: {description}\n\n"
-                            f"Play I Spy! Pick ONE specific object you can see in the description above. "
-                            f"Say 'I spy with my little eye, something beginning with [first letter]!' "
-                            f"Pick something a child could guess — not too hard, not too easy. "
-                            f"Do NOT reveal what it is yet. Wait for them to guess. "
-                            f"Keep it fun and playful!"
-                        )
+                        enriched = self._ispy_prompt(description)
                     else:
                         enriched = f"{question}\n\n[Camera view: {description}]"
 
@@ -613,6 +641,24 @@ class NabooAgent:
                 logger.info(f"Question from {user} (conv:{conversation_id}): {question}")
                 response = await self._process_question(question, user, conversation_id or "")
                 logger.info(f"Response: {response[:100]}...")
+
+                # Extract I Spy game state from response
+                import re as _re
+                ispy_match = _re.search(r'something beginning with ["\']?([A-Z])["\']?', response, _re.IGNORECASE)
+                if ispy_match:
+                    letter = ispy_match.group(1).upper()
+                    # Try to extract the object from "OBJECT: ..." line
+                    obj_match = _re.search(r'OBJECT:\s*(.+)', response, _re.IGNORECASE)
+                    obj_name = obj_match.group(1).strip().rstrip('.!') if obj_match else f"something beginning with {letter}"
+                    self._ispy_state = {
+                        "letter": letter,
+                        "object": obj_name,
+                        "timestamp": time.time(),
+                    }
+                    logger.info(f"I Spy game started: letter={letter}, object={obj_name}")
+                    # Strip the OBJECT: line from the spoken response
+                    response = _re.sub(r'\n?OBJECT:.*', '', response).strip()
+
                 logger.info(f"Publishing answer for conv:{conversation_id}, text_len={len(response)}, starts_with={response[:30]!r}")
 
                 # Publish answer — include conversation_id so HA component can match it
