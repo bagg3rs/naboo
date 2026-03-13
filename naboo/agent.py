@@ -408,10 +408,12 @@ class NabooAgent:
         Used for no-tools queries where Strands adds 30-50s of overhead
         for zero benefit (no tool calling, no agent loop).
         """
-        model_config = self.model_router.route("simple")
-        url = f"http://192.168.0.50:{model_config.port}/v1/chat/completions"
+        import httpx
+        mlx_port = os.getenv("MLX_PORT", "11435")
+        url = f"http://192.168.0.50:{mlx_port}/v1/chat/completions"
+        model_id = os.getenv("MLX_MODEL_S1", "mlx-community/Qwen2.5-7B-Instruct-4bit")
         payload = {
-            "model": model_config.model_id,
+            "model": model_id,
             "messages": [
                 {"role": "system", "content": self.system_prompt},
                 {"role": "user", "content": question},
@@ -442,7 +444,11 @@ class NabooAgent:
 
             # Fast path: no tools needed → call MLX directly, skip Strands entirely
             # Strands adds 30-50s overhead even with no tools (metrics/telemetry flush)
-            if no_tools:
+            # Applies to: pre-fetched (vision) queries AND simple queries (greetings, facts, math)
+            from .router.query_classifier import classify_query, QueryComplexity as QC
+            complexity = classify_query(enriched_question)
+            use_direct = no_tools or complexity == QC.SIMPLE
+            if use_direct:
                 try:
                     response = await self._call_mlx_direct(enriched_question)
                     response = _clean_response(response)
