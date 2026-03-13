@@ -439,7 +439,7 @@ class NabooAgent:
                 })
                 return response
             except Exception as e:
-                logger.error(f"Agent error: {e}")
+                logger.error(f"Agent error: {e}", exc_info=True)
                 root_span.record_exception(e)
                 return "Sorry, I had a little trouble with that one. Can you ask me again?"
 
