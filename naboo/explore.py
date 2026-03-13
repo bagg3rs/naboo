@@ -117,8 +117,8 @@ class ExploreController:
     async def _loop(self):
         t0 = time.monotonic()
         try:
-            self._speak("Time to explore! Let's see what's around.")
-            await asyncio.sleep(1.5)
+            self._speak("Time to explore!")
+            self._motor("move_forward", SPEED_FWD)  # Start moving immediately
 
             while self._running:
                 # Safety checks
@@ -140,7 +140,10 @@ class ExploreController:
                     await asyncio.sleep(0.8)
                     self._motor("stop", 0)
                     self._record_bounce()
-                    await asyncio.sleep(0.3)
+                    # Turn away from obstacle
+                    self._motor("turn_left", SPEED_TURN)
+                    await asyncio.sleep(0.8)
+                    self._motor("move_forward", SPEED_FWD)  # Resume moving
                     continue
 
                 # Collision recovery
@@ -149,9 +152,10 @@ class ExploreController:
                     self._motor("stop", 0)
                     self._motor("move_backward", SPEED_BACK)
                     await asyncio.sleep(0.8)
-                    self._motor("stop", 0)
+                    self._motor("turn_right", SPEED_TURN)
+                    await asyncio.sleep(0.8)
+                    self._motor("move_forward", SPEED_FWD)  # Resume moving
                     self._record_bounce()
-                    await asyncio.sleep(0.3)
                     continue
 
                 # Stuck → 180° turn
@@ -160,14 +164,14 @@ class ExploreController:
                     self._speak("I keep bumping into things. Let me turn around!")
                     self._motor("turn_left", SPEED_TURN)
                     await asyncio.sleep(2.5)
-                    self._motor("stop", 0)
+                    self._motor("move_forward", SPEED_FWD)  # Resume moving
                     self._bounces.clear()
                     self._recent.append("turn_180")
-                    await asyncio.sleep(0.5)
                     continue
 
-                # === Decision cycle ===
+                # === Decision cycle (runs WHILE robot is moving) ===
                 try:
+                    # Robot keeps moving forward during this entire block
                     image_b64 = await self._capture()
                     if not image_b64:
                         await asyncio.sleep(2)
@@ -179,27 +183,26 @@ class ExploreController:
                     log.info("🤖 %s | %s | dist=%.0fcm bat=%.0f%%",
                              action, narration, self._distance, self._battery)
 
+                    # Narrate what we see (fire and forget — don't wait)
+                    self._speak(narration)
+
                     if action == "stop":
-                        self._speak(narration)
                         break
                     elif action == "forward":
-                        self._motor("move_forward", SPEED_FWD)
-                    elif action == "turn_left":
-                        self._motor("turn_left", SPEED_TURN)
-                    elif action == "turn_right":
-                        self._motor("turn_right", SPEED_TURN)
-                    else:
-                        self._motor("move_forward", SPEED_FWD)
+                        # Already moving forward — just keep going
+                        self._motor("move_forward", SPEED_FWD)  # Refresh command
+                    elif action in ("turn_left", "turn_right"):
+                        # Only stop briefly for turns
+                        self._motor("stop", 0)
+                        await asyncio.sleep(0.2)
+                        self._motor(action, SPEED_TURN)
+                        await asyncio.sleep(1.0)  # Turn duration
+                        self._motor("move_forward", SPEED_FWD)  # Resume forward
 
                     self._recent.append(action)
-                    self._speak(narration)
-                    await asyncio.sleep(MOVE_SECS)
-                    self._motor("stop", 0)
-                    await asyncio.sleep(0.3)
 
                 except Exception as e:
                     log.error("❌ Cycle error: %s", e, exc_info=True)
-                    self._motor("stop", 0)
                     await asyncio.sleep(3)
 
         except asyncio.CancelledError:
