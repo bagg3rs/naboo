@@ -168,6 +168,8 @@ class NabooAgent:
         self._session_messages: list = []
         # Map conversation_id → identified user (set when someone says "I am Ziggy")
         self._identified_users: dict = {}
+        # Cache last vision description to avoid repeated VLM calls (GPU memory swap is 25s+)
+        self._vision_cache: Optional[dict] = None  # {"description": str, "timestamp": float}
 
     def _detect_user_introduction(self, text: str) -> Optional[str]:
         """
@@ -322,13 +324,30 @@ class NabooAgent:
                 import httpx, base64
                 camera_url = os.getenv("NABOO_CAMERA_URL", "")
                 vision_url = os.getenv("NABOO_VISION_URL", "")
+                is_ispy = re.search(r'\bi\s*spy\b', q) or re.search(r'\bplay.* i\s*spy\b', q)
+
+                # For I Spy, try cached vision first (VLM swap takes 25s+, kills latency)
+                if is_ispy and self._vision_cache:
+                    cache_age = time.time() - self._vision_cache["timestamp"]
+                    if cache_age < 300:  # 5 minutes
+                        description = self._vision_cache["description"]
+                        logger.info(f"Using cached vision ({cache_age:.0f}s old) for I Spy")
+                        enriched = (
+                            f"You can see the following: {description}\n\n"
+                            f"Play I Spy! Pick ONE specific object you can see in the description above. "
+                            f"Say 'I spy with my little eye, something beginning with [first letter]!' "
+                            f"Pick something a child could guess — not too hard, not too easy. "
+                            f"Do NOT reveal what it is yet. Wait for them to guess. "
+                            f"Keep it fun and playful!"
+                        )
+                        return enriched, True
+
                 if camera_url and vision_url:
                     with telemetry.span("naboo.prefetch.vision"):
                         cam_resp = httpx.get(camera_url, timeout=5.0)
                         cam_resp.raise_for_status()
                         image_b64 = base64.b64encode(cam_resp.content).decode("utf-8")
                         # Use a proper vision prompt - raw "play i spy" gets refused by VLM
-                        is_ispy = re.search(r'\bi\s*spy\b', q) or re.search(r'\bplay.* i\s*spy\b', q)
                         vision_question = "List 5 specific objects you can see in this image" if is_ispy else question
                         vis_resp = httpx.post(
                             f"{vision_url}/vision",
@@ -338,8 +357,11 @@ class NabooAgent:
                         vis_resp.raise_for_status()
                         description = vis_resp.json().get("description", "")
 
+                    # Cache every vision result
+                    self._vision_cache = {"description": description, "timestamp": time.time()}
+
                     # ── Game mode: I Spy ──────────────────────────────────
-                    if re.search(r'\bi\s*spy\b', q) or re.search(r'\bplay.* i\s*spy\b', q):
+                    if is_ispy:
                         enriched = (
                             f"You can see the following: {description}\n\n"
                             f"Play I Spy! Pick ONE specific object you can see in the description above. "
