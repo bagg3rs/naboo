@@ -111,10 +111,12 @@ def build_model_router() -> ModelRouter:
         supports_vision=True,  # Claude has vision
     )
 
+    # All tiers use Bedrock Haiku — better instruction following, no GPU contention
+    # with local VLM, and consistent latency (~1-2s). MLX kept for VLM only.
     router = ModelRouter(
         model_configs={
-            QueryComplexity.SIMPLE:       s1,
-            QueryComplexity.MODERATE:     s2,
+            QueryComplexity.SIMPLE:       bedrock,
+            QueryComplexity.MODERATE:     bedrock,
             QueryComplexity.COMPLEX:      bedrock,
             QueryComplexity.CURRENT_INFO: bedrock,
         }

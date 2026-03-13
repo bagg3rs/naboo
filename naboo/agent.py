@@ -469,29 +469,28 @@ class NabooAgent:
             tools=tools,
         ), route_attrs
 
-    async def _call_mlx_direct(self, question: str) -> str:
-        """Call MLX server directly via HTTP, bypassing Strands entirely.
+    async def _call_direct(self, question: str) -> str:
+        """Call Bedrock Haiku directly, bypassing Strands entirely.
 
         Used for no-tools queries where Strands adds 30-50s of overhead
         for zero benefit (no tool calling, no agent loop).
+        Haiku 4.5 gives better instruction following + no GPU contention.
         """
-        import httpx
-        mlx_port = os.getenv("MLX_PORT", "11435")
-        url = f"http://192.168.0.50:{mlx_port}/v1/chat/completions"
-        model_id = os.getenv("MLX_MODEL_S1", "mlx-community/Qwen2.5-7B-Instruct-4bit")
-        payload = {
-            "model": model_id,
-            "messages": [
-                {"role": "system", "content": self.system_prompt},
-                {"role": "user", "content": question},
-            ],
+        import boto3, json as _json
+        model_id = os.getenv("BEDROCK_MODEL_ID", "eu.anthropic.claude-haiku-4-5-20251001-v1:0")
+        region = os.getenv("AWS_REGION", "eu-west-2")
+
+        client = boto3.client("bedrock-runtime", region_name=region)
+        body = _json.dumps({
+            "anthropic_version": "bedrock-2023-05-31",
             "max_tokens": 256,
+            "system": self.system_prompt,
+            "messages": [{"role": "user", "content": question}],
             "temperature": 0.7,
-        }
-        resp = httpx.post(url, json=payload, timeout=30.0)
-        resp.raise_for_status()
-        data = resp.json()
-        return data["choices"][0]["message"]["content"].strip()
+        })
+        resp = client.invoke_model(modelId=model_id, body=body, contentType="application/json")
+        result = _json.loads(resp["body"].read())
+        return result["content"][0]["text"].strip()
 
     async def _process_question(self, question: str, user: str, conversation_id: str = "") -> str:
         """Run the agent on a question and return the response."""
@@ -516,10 +515,10 @@ class NabooAgent:
             use_direct = no_tools or complexity == QueryComplexity.SIMPLE
             if use_direct:
                 try:
-                    response = await self._call_mlx_direct(enriched_question)
+                    response = await self._call_direct(enriched_question)
                     response = _clean_response(response)
                     elapsed = time.monotonic() - t0
-                    logger.info(f"Direct MLX response ({elapsed:.1f}s): {response[:80]}...")
+                    logger.info(f"Direct Haiku response ({elapsed:.1f}s): {response[:80]}...")
                     root_span.set_attribute("response_len", len(response))
                     root_span.set_attribute("elapsed_s", f"{elapsed:.2f}")
                     root_span.set_attribute("path", "direct_mlx")
@@ -530,7 +529,7 @@ class NabooAgent:
                     })
                     return response
                 except Exception as e:
-                    logger.warning(f"Direct MLX failed, falling back to Strands: {e}")
+                    logger.warning(f"Direct Haiku failed, falling back to Strands: {e}")
 
             # Route
             with telemetry.span("naboo.route") as route_span:
