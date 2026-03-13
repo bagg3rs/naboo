@@ -310,7 +310,8 @@ async def websocket_endpoint(ws: WebSocket):
             elif cmd == "tts":
                 text = data.get("text", "")
                 if text:
-                    _ha_tts(text)
+                    mqtt_client.publish("mbot2/speak", json.dumps({"text": text}))
+                    log.info("TTS (mbot2): %s", text[:80])
             else:
                 send_command(cmd, data.get("speed"))
     except WebSocketDisconnect:
