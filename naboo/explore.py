@@ -23,7 +23,7 @@ BEDROCK_REGION = "eu-west-2"
 
 SPEED_FWD, SPEED_TURN, SPEED_BACK = 30, 35, 25
 SAFETY_CM = 10
-LOW_BATTERY = 20
+LOW_BATTERY = 10
 MAX_SECS = 300
 TELEM_TIMEOUT = 30  # seconds without telemetry (generous for WiFi drops)
 BOUNCE_WINDOW = 20
