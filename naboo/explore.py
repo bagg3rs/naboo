@@ -25,7 +25,7 @@ SPEED_FWD, SPEED_TURN, SPEED_BACK = 30, 35, 25
 SAFETY_CM = 10
 LOW_BATTERY = 20
 MAX_SECS = 300
-TELEM_TIMEOUT = 10
+TELEM_TIMEOUT = 30  # seconds without telemetry (generous for WiFi drops)
 BOUNCE_WINDOW = 20
 BOUNCE_LIMIT = 4
 MOVE_SECS = 1.5
@@ -226,7 +226,7 @@ class ExploreController:
 
     async def _describe(self, image_b64: str) -> str | None:
         try:
-            async with httpx.AsyncClient(timeout=15) as client:
+            async with httpx.AsyncClient(timeout=30) as client:
                 r = await client.post(VLM_URL, json={"image_b64": image_b64, "question": VLM_QUESTION})
                 r.raise_for_status()
                 desc = r.json().get("description", "")
