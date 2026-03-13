@@ -282,8 +282,7 @@ class ExploreController:
         self.mqtt.publish("mbot2/command", json.dumps({"command_type": cmd, "parameters": {"speed": speed}}))
 
     def _speak(self, text: str):
-        self.mqtt.publish("mbot2/speak", json.dumps({"text": text}))
-        # Also announce via HA Voice TTS (fire and forget)
+        # Announce via HA Voice TTS only (CyberPi can't TTS + move simultaneously)
         try:
             import urllib.request
             payload = json.dumps({
