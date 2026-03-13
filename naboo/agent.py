@@ -324,10 +324,13 @@ class NabooAgent:
                         cam_resp = httpx.get(camera_url, timeout=5.0)
                         cam_resp.raise_for_status()
                         image_b64 = base64.b64encode(cam_resp.content).decode("utf-8")
+                        # Use a proper vision prompt - raw "play i spy" gets refused by VLM
+                        is_ispy = re.search(r'\bi\s*spy\b', q) or re.search(r'\bplay.* i\s*spy\b', q)
+                        vision_question = "List 5 specific objects you can see in this image" if is_ispy else question
                         vis_resp = httpx.post(
                             f"{vision_url}/vision",
-                            json={"image_b64": image_b64, "question": question, "max_tokens": 200},
-                            timeout=20.0,
+                            json={"image_b64": image_b64, "question": vision_question, "max_tokens": 200},
+                            timeout=30.0,
                         )
                         vis_resp.raise_for_status()
                         description = vis_resp.json().get("description", "")
@@ -399,6 +402,28 @@ class NabooAgent:
             tools=tools,
         ), route_attrs
 
+    async def _call_mlx_direct(self, question: str) -> str:
+        """Call MLX server directly via HTTP, bypassing Strands entirely.
+
+        Used for no-tools queries where Strands adds 30-50s of overhead
+        for zero benefit (no tool calling, no agent loop).
+        """
+        model_config = self.model_router.route("simple")
+        url = f"http://192.168.0.50:{model_config.port}/v1/chat/completions"
+        payload = {
+            "model": model_config.model_id,
+            "messages": [
+                {"role": "system", "content": self.system_prompt},
+                {"role": "user", "content": question},
+            ],
+            "max_tokens": 256,
+            "temperature": 0.7,
+        }
+        resp = httpx.post(url, json=payload, timeout=30.0)
+        resp.raise_for_status()
+        data = resp.json()
+        return data["choices"][0]["message"]["content"].strip()
+
     async def _process_question(self, question: str, user: str, conversation_id: str = "") -> str:
         """Run the agent on a question and return the response."""
         t0 = time.monotonic()
@@ -414,6 +439,26 @@ class NabooAgent:
                 enriched_question, no_tools = self._enrich_question(question)
                 enrich_span.set_attribute("pre_fetched", str(no_tools))
                 enrich_span.set_attribute("enriched", str(enriched_question != question))
+
+            # Fast path: no tools needed → call MLX directly, skip Strands entirely
+            # Strands adds 30-50s overhead even with no tools (metrics/telemetry flush)
+            if no_tools:
+                try:
+                    response = await self._call_mlx_direct(enriched_question)
+                    response = _clean_response(response)
+                    elapsed = time.monotonic() - t0
+                    logger.info(f"Direct MLX response ({elapsed:.1f}s): {response[:80]}...")
+                    root_span.set_attribute("response_len", len(response))
+                    root_span.set_attribute("elapsed_s", f"{elapsed:.2f}")
+                    root_span.set_attribute("path", "direct_mlx")
+                    self._session_messages.append({
+                        "user": user,
+                        "question": question,
+                        "response": response,
+                    })
+                    return response
+                except Exception as e:
+                    logger.warning(f"Direct MLX failed, falling back to Strands: {e}")
 
             # Route
             with telemetry.span("naboo.route") as route_span:
