@@ -159,6 +159,7 @@ class NabooAgent:
         self.router = build_model_router()
         self.classifier = build_query_classifier()
         self.system_prompt = _load_system_prompt()
+        self._explore: Optional["ExploreController"] = None
 
         self._mqtt: Optional[mqtt.Client] = None
         self._loop: Optional[asyncio.AbstractEventLoop] = None
@@ -234,7 +235,9 @@ class NabooAgent:
                 return
             logger.info(f"MQTT connected. Subscribing to {QUESTION_TOPIC}")
             c.subscribe(QUESTION_TOPIC, qos=1)
-            logger.info(f"Subscribed to {QUESTION_TOPIC}")
+            c.subscribe("mbot2/telemetry", qos=0)
+            c.subscribe("mbot2/collision", qos=0)
+            logger.info(f"Subscribed to {QUESTION_TOPIC}, mbot2/telemetry, mbot2/collision")
 
         client.on_connect = _on_connect
         client.on_message = self._on_message
@@ -257,8 +260,18 @@ class NabooAgent:
         return client
 
     def _on_message(self, client, userdata, msg):
-        """MQTT message callback — queue question for processing."""
+        """MQTT message callback — route by topic."""
         try:
+            # Route telemetry/collision to explore controller
+            if msg.topic == "mbot2/telemetry" and self._explore and self._explore.is_running:
+                data = json.loads(msg.payload.decode())
+                self._explore.on_telemetry(data)
+                return
+            if msg.topic == "mbot2/collision" and self._explore and self._explore.is_running:
+                self._explore.on_collision()
+                return
+
+            # Route questions to agent
             payload = json.loads(msg.payload.decode())
             question = payload.get("text") or payload.get("question") or str(payload)
             user = payload.get("user", "unknown")
@@ -284,6 +297,17 @@ class NabooAgent:
         """
         import re
         q = question.lower()
+
+        # ── Explore mode trigger ──────────────────────────────────────────────
+        is_explore_start = re.search(r'\b(explore|start exploring|look around the house|go explore)\b', q)
+        is_explore_stop = re.search(r'\b(stop exploring|stop moving|come back|stay)\b', q)
+        if is_explore_stop and self._explore and self._explore.is_running:
+            asyncio.create_task(self._explore.stop())
+            return "Stopping exploration. I'll stay right here!", True
+        if is_explore_start:
+            if self._explore and self._explore.is_running:
+                return "I'm already exploring! Say 'stop exploring' to stop me.", True
+            return "__EXPLORE_START__", True  # sentinel handled in main loop
 
         # ── I Spy guess detection ─────────────────────────────────────────────
         # If there's an active I Spy game (< 5 min old), check if this is a guess
@@ -525,6 +549,16 @@ class NabooAgent:
                 enriched_question, no_tools = self._enrich_question(question)
                 enrich_span.set_attribute("pre_fetched", str(no_tools))
                 enrich_span.set_attribute("enriched", str(enriched_question != question))
+
+            # Handle explore mode start
+            if enriched_question == "__EXPLORE_START__":
+                from .explore import ExploreController
+                if not self._explore:
+                    self._explore = ExploreController(self._mqtt)
+                    # Wire telemetry — already subscribed, just add callback
+                    self._explore._last_telem = time.monotonic()
+                await self._explore.start()
+                return "Explore mode activated! I'll use my camera to navigate and tell you what I see."
 
             # Fast path: no tools needed → call MLX directly, skip Strands entirely
             # Strands adds 30-50s overhead even with no tools (metrics/telemetry flush)
