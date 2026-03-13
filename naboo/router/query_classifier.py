@@ -109,6 +109,9 @@ class QueryClassifier:
         r'\bshow me\b',
         r'\buse.* camera\b',
         r'\bbird.*(stats?|feeder|count|species)\b',
+        r'\bi\s*spy\b',
+        r'\bplay.* i\s*spy\b',
+        r'\blet.s play\b.*\b(spy|look|see)\b',
     ]
     
     def __init__(

@@ -310,6 +310,9 @@ class NabooAgent:
             or re.search(r'\buse.* camera\b', q)
             or re.search(r'\bwhat do you see\b', q)
             or re.search(r'\bwhat.s (around|ahead|behind|there)\b', q)
+            or re.search(r'\bi\s*spy\b', q)
+            or re.search(r'\bplay.* i\s*spy\b', q)
+            or re.search(r'\blet.s play\b.*\b(spy|look|see)\b', q)
         )
         if is_vision:
             try:
@@ -328,7 +331,20 @@ class NabooAgent:
                         )
                         vis_resp.raise_for_status()
                         description = vis_resp.json().get("description", "")
-                    enriched = f"{question}\n\n[Camera view: {description}]"
+
+                    # ── Game mode: I Spy ──────────────────────────────────
+                    if re.search(r'\bi\s*spy\b', q) or re.search(r'\bplay.* i\s*spy\b', q):
+                        enriched = (
+                            f"You can see the following: {description}\n\n"
+                            f"Play I Spy! Pick ONE specific object you can see in the description above. "
+                            f"Say 'I spy with my little eye, something beginning with [first letter]!' "
+                            f"Pick something a child could guess — not too hard, not too easy. "
+                            f"Do NOT reveal what it is yet. Wait for them to guess. "
+                            f"Keep it fun and playful!"
+                        )
+                    else:
+                        enriched = f"{question}\n\n[Camera view: {description}]"
+
                     logger.info(f"Pre-fetched vision: {description[:80]}...")
                     return enriched, True
             except Exception as e:
