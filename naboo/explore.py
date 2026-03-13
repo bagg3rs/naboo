@@ -8,6 +8,7 @@ import asyncio
 import base64
 import json
 import logging
+import os
 import time
 from collections import deque
 
@@ -21,9 +22,13 @@ VLM_URL = "http://192.168.0.50:11436/vision"
 HAIKU_MODEL = "eu.anthropic.claude-haiku-4-5-20251001-v1:0"
 BEDROCK_REGION = "eu-west-2"
 
+HA_URL = "http://192.168.0.201:8123"
+HA_TTS_ENTITY = "tts.home_assistant_cloud"
+HA_MEDIA_PLAYER = "media_player.home_assistant_voice_093cd7_media_player"
+
 SPEED_FWD, SPEED_TURN, SPEED_BACK = 30, 35, 25
 SAFETY_CM = 10
-LOW_BATTERY = 10
+LOW_BATTERY = 20
 MAX_SECS = 300
 TELEM_TIMEOUT = 30  # seconds without telemetry (generous for WiFi drops)
 BOUNCE_WINDOW = 20
@@ -278,6 +283,26 @@ class ExploreController:
 
     def _speak(self, text: str):
         self.mqtt.publish("mbot2/speak", json.dumps({"text": text}))
+        # Also announce via HA Voice TTS (fire and forget)
+        try:
+            import urllib.request
+            payload = json.dumps({
+                "entity_id": HA_TTS_ENTITY,
+                "media_player_entity_id": HA_MEDIA_PLAYER,
+                "message": text,
+            }).encode()
+            req = urllib.request.Request(
+                f"{HA_URL}/api/services/tts/speak",
+                data=payload,
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {os.environ.get('HA_TOKEN', '')}",
+                },
+                method="POST",
+            )
+            urllib.request.urlopen(req, timeout=3)
+        except Exception as e:
+            log.debug("HA TTS announce failed (non-fatal): %s", e)
 
     def _record_bounce(self):
         now = time.monotonic()
