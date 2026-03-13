@@ -263,12 +263,15 @@ class NabooAgent:
         """MQTT message callback — route by topic."""
         try:
             # Route telemetry/collision to explore controller
-            if msg.topic == "mbot2/telemetry" and self._explore and self._explore.is_running:
+            # Always absorb telemetry/collision — never treat as questions
+            if msg.topic == "mbot2/telemetry":
                 data = json.loads(msg.payload.decode())
-                self._explore.on_telemetry(data)
+                if self._explore:
+                    self._explore.on_telemetry(data)
                 return
-            if msg.topic == "mbot2/collision" and self._explore and self._explore.is_running:
-                self._explore.on_collision()
+            if msg.topic == "mbot2/collision":
+                if self._explore:
+                    self._explore.on_collision()
                 return
 
             # Route questions to agent
