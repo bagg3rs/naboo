@@ -89,6 +89,9 @@ def _clean_response(text: str) -> str:
 
     text = text.strip()
 
+    # ── 0. Strip model special tokens ──────────────────────────────────────
+    text = re.sub(r'<\|im_end\|>|<\|im_start\|>|<\|endoftext\|>', '', text).strip()
+
     # ── 1. Full-response tool call: extract inner text ─────────────────────
     # Matches any of:  word("string")  word({"text":"..."})  word {"text":"..."}
     # Only applies when the ENTIRE response is a tool call
