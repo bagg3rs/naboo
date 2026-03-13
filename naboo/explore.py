@@ -253,7 +253,12 @@ class ExploreController:
                     "messages": [{"role": "user", "content": prompt}],
                 }),
             )
-            text = json.loads(resp["body"].read())["content"][0]["text"].strip()
+            raw = resp["body"].read().decode()
+            log.debug("Haiku raw: %s", raw[:200])
+            text = json.loads(raw)["content"][0]["text"].strip()
+            # Handle markdown-wrapped JSON
+            if text.startswith("```"):
+                text = text.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
             parsed = json.loads(text)
             action = parsed.get("action", "forward")
             narration = parsed.get("narration", "I see something interesting!")
