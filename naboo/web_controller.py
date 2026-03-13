@@ -104,10 +104,13 @@ COMMANDS = {
 }
 
 
-def send_command(cmd: str):
+def send_command(cmd: str, speed: int = None):
     if cmd in COMMANDS:
-        mqtt_client.publish("mbot2/command", json.dumps(COMMANDS[cmd]))
-        log.info("Command: %s", cmd)
+        payload = dict(COMMANDS[cmd])
+        if speed is not None:
+            payload["parameters"] = {"speed": speed}
+        mqtt_client.publish("mbot2/command", json.dumps(payload))
+        log.info("Command: %s speed=%s", cmd, speed)
 
 
 # ── HTML ──────────────────────────────────────────────────────────────────────
@@ -147,6 +150,8 @@ HTML = """<!DOCTYPE html>
   .explore-btn { margin: 8px; padding: 12px 24px; border: 2px solid #a855f7; background: transparent;
                  color: #a855f7; border-radius: 8px; font-size: 1em; cursor: pointer; }
   .explore-btn.active { background: #a855f7; color: white; }
+  .speed-row { display: flex; align-items: center; gap: 10px; margin: 8px 0; font-size: 0.95em; }
+  .speed-row input[type=range] { flex: 1; accent-color: #a855f7; }
 </style>
 </head>
 <body>
@@ -171,6 +176,13 @@ HTML = """<!DOCTYPE html>
 </div>
 
 <button class="explore-btn" id="exploreBtn" onclick="toggleExplore()">🔍 Explore</button>
+
+<div class="speed-row" style="width:100%; max-width:640px;">
+  <span>🐢</span>
+  <input type="range" id="speedSlider" min="15" max="60" value="30" oninput="document.getElementById('speedVal').textContent=this.value">
+  <span>🐇</span>
+  <span id="speedVal" style="min-width:2em; text-align:center;">30</span>
+</div>
 
 <div style="display:flex; gap:8px; margin:10px 0; width:100%; max-width:640px;">
   <input type="text" id="ttsInput" placeholder="Type to speak..." 
@@ -206,7 +218,8 @@ document.querySelectorAll('.btn[data-cmd]').forEach(btn => {
   const start = (e) => {
     e.preventDefault();
     btn.classList.add('active');
-    ws.send(JSON.stringify({cmd}));
+    const speed = parseInt(document.getElementById('speedSlider').value);
+    ws.send(JSON.stringify({cmd, speed}));
   };
   const end = (e) => {
     e.preventDefault();
@@ -227,7 +240,8 @@ const pressed = new Set();
 document.addEventListener('keydown', (e) => {
   if (keyMap[e.key] && !pressed.has(e.key)) {
     pressed.add(e.key);
-    ws.send(JSON.stringify({cmd: keyMap[e.key]}));
+    const speed = parseInt(document.getElementById('speedSlider').value);
+    ws.send(JSON.stringify({cmd: keyMap[e.key], speed}));
     const btn = document.querySelector(`[data-cmd="${keyMap[e.key]}"]`);
     if (btn) btn.classList.add('active');
   }
@@ -298,7 +312,7 @@ async def websocket_endpoint(ws: WebSocket):
                 if text:
                     _ha_tts(text)
             else:
-                send_command(cmd)
+                send_command(cmd, data.get("speed"))
     except WebSocketDisconnect:
         pass
     except Exception as e:
