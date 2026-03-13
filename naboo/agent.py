@@ -445,9 +445,8 @@ class NabooAgent:
             # Fast path: no tools needed → call MLX directly, skip Strands entirely
             # Strands adds 30-50s overhead even with no tools (metrics/telemetry flush)
             # Applies to: pre-fetched (vision) queries AND simple queries (greetings, facts, math)
-            from .router.query_classifier import classify_query, QueryComplexity as QC
-            complexity = classify_query(enriched_question)
-            use_direct = no_tools or complexity == QC.SIMPLE
+            complexity = self.classifier.classify_query(enriched_question)
+            use_direct = no_tools or complexity == QueryComplexity.SIMPLE
             if use_direct:
                 try:
                     response = await self._call_mlx_direct(enriched_question)
