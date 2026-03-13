@@ -524,6 +524,7 @@ class NabooAgent:
                 logger.info(f"Question from {user} (conv:{conversation_id}): {question}")
                 response = await self._process_question(question, user, conversation_id or "")
                 logger.info(f"Response: {response[:100]}...")
+                logger.info(f"Publishing answer for conv:{conversation_id}, text_len={len(response)}, starts_with={response[:30]!r}")
 
                 # Publish answer — include conversation_id so HA component can match it
                 if self._mqtt:
@@ -531,6 +532,7 @@ class NabooAgent:
                     if conversation_id:
                         payload["conversation_id"] = conversation_id
                     self._mqtt.publish(ANSWER_TOPIC, json.dumps(payload))
+                    logger.info(f"Published answer for conv:{conversation_id}")
 
             except asyncio.TimeoutError:
                 continue
