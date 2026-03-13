@@ -117,7 +117,6 @@ class ExploreController:
     async def _loop(self):
         t0 = time.monotonic()
         try:
-            self._speak("Time to explore!")
             self._motor("move_forward", SPEED_FWD)  # Start moving immediately
 
             while self._running:
