@@ -1,9 +1,17 @@
 # 🤖 Naboo
 
+[![Last Commit](https://img.shields.io/github/last-commit/bagg3rs/naboo?style=flat-square)](https://github.com/bagg3rs/naboo/commits)
+[![Python](https://img.shields.io/badge/python-3.11+-blue?style=flat-square&logo=python)](https://www.python.org/)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square)](LICENSE)
+[![Issues](https://img.shields.io/github/issues/bagg3rs/naboo?style=flat-square)](https://github.com/bagg3rs/naboo/issues)
+
 > *"If I only had a brain…"*
 
 Naboo is a family AI robot. They started life as a stock [mBot2](https://www.makeblock.com/pages/mbot2-steam-educational-robot-kit) — plastic wheels, ultrasonic sensors, a bit of pre-programmed wiggling. Then we gave them a brain.
 
+This repo documents the journey from **stock robot** to **physical AI agent**: natural language understanding, voice responses, camera vision, autonomous navigation, and a personality the kids genuinely love.
+
+---
 This repo documents the journey from **stock robot** to **physical AI agent**: natural language understanding, voice responses, camera vision, autonomous navigation, and a personality the kids genuinely love.
 
 ---
