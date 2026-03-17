@@ -4,8 +4,8 @@
 # Placement: 1-1.5m height, 3-8m from router, avoid metal surfaces
 
 esphome:
-  name: naboo-csi-bedroom
-  friendly_name: "Naboo CSI - Bedroom"
+  name: esp-csi-bedroom
+  friendly_name: "CSI Presence - Bedroom"
 
 esp32:
   board: seeed_xiao_esp32c3
@@ -32,7 +32,7 @@ wifi:
 mqtt:
   broker: 192.168.0.50
   port: 1883
-  topic_prefix: naboo/csi/bedroom
+  topic_prefix: esp-csi/bedroom  # change per location
 
 # Also expose to Home Assistant for automations
 api:
