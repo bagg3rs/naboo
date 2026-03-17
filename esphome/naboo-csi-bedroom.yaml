@@ -1,0 +1,48 @@
+# Naboo CSI Presence Sensor - Master Bedroom (1F)
+# Hardware: Seeed XIAO ESP32-C3
+# Purpose: WiFi CSI presence detection + motion scoring
+# Placement: 1-1.5m height, 3-8m from router, avoid metal surfaces
+
+esphome:
+  name: naboo-csi-bedroom
+  friendly_name: "Naboo CSI - Bedroom"
+
+esp32:
+  board: seeed_xiao_esp32c3
+  framework:
+    type: esp-idf
+    sdkconfig_options:
+      CONFIG_PM_ENABLE: "n"
+      CONFIG_ESP_WIFI_STA_DISCONNECTED_PM_ENABLE: "n"
+      CONFIG_ESP_WIFI_CSI_ENABLED: "y"
+
+external_components:
+  - source: github://jagenjo/espectre
+
+wifi:
+  ssid: "internetoftings"
+  password: !secret wifi_password
+
+# MQTT for Naboo agent integration
+mqtt:
+  broker: 192.168.0.50
+  port: 1883
+  topic_prefix: naboo/csi/bedroom
+
+# Also expose to Home Assistant for automations
+api:
+  encryption:
+    key: !secret api_key
+
+ota:
+  - platform: esphome
+    password: !secret ota_password
+
+logger:
+  level: INFO
+
+# Status LED (XIAO C3 has built-in LED on GPIO10)
+light:
+  - platform: status_led
+    name: "Status LED"
+    pin: GPIO10
