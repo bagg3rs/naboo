@@ -131,8 +131,8 @@ light:
 - [x] Create ESPHome config for bedroom sensor
 - [x] Fix ESPectre repo URL (moved to francescopace)
 - [x] Fix OTA platform syntax for ESPHome 2025.12+
-- [ ] First successful compile + flash
-- [ ] Calibrate bedroom sensor
+- [x] First successful compile + flash ✅ (Mar 17)
+- [ ] Calibrate bedroom sensor (baseline ~0.08-0.15 empty, threshold at 1.0 — may need lowering)
 - [ ] Deploy remaining 4 sensors
 - [ ] Naboo agent MQTT subscriber
 - [ ] HA automations (lights, heating)
