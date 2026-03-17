@@ -1,0 +1,16 @@
+[Unit]
+Description=Naboo Camera Server (Pi Camera Module 3)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/opt/naboo-cam
+ExecStart=/usr/bin/python3 /opt/naboo-cam/camera_server.py
+Restart=always
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
