@@ -10,12 +10,13 @@ Replaces the XIAO ESP32S3 camera — same HTTP snapshot interface, much better i
 
 ## Setup
 
-### 1. Flash Pi OS
+### 1. Flash Pi OS Lite
 Use Raspberry Pi Imager:
 - **OS:** Raspberry Pi OS Lite (32-bit, Bookworm)
 - **Hostname:** `naboo-cam`
 - **WiFi:** Configure your network
 - **SSH:** Enable with password or key
+- **Username:** `pi` (or your preference)
 
 ### 2. First Boot
 ```bash
@@ -24,14 +25,14 @@ ssh pi@naboo-cam.local
 # Update
 sudo apt update && sudo apt upgrade -y
 
-# Install camera dependencies
-sudo apt install -y python3-picamera2 python3-flask
+# picamera2 is pre-installed on Pi OS Lite (Bookworm) — just need Flask
+sudo apt install -y python3-flask
 
 # Check camera is detected
 libcamera-hello --list-cameras
 ```
 
-You should see something like:
+You should see:
 ```
 0 : imx708_wide [4608x2592 10-bit RGGB] (/base/soc/i2c0mux/i2c@1/imx708@1a)
 ```
@@ -43,22 +44,24 @@ sudo cp camera_server.py /opt/naboo-cam/
 sudo cp naboo-cam.service /etc/systemd/system/
 
 sudo systemctl daemon-reload
-sudo systemctl enable naboo-cam
-sudo systemctl start naboo-cam
+sudo systemctl enable --now naboo-cam
 ```
 
 ### 4. Test
 ```bash
 # Snapshot (JPEG)
-curl -o test.jpg http://naboo-cam.local/
+curl -o test.jpg http://naboo-cam.local:8080/
 
 # MJPEG stream (open in browser)
 open http://naboo-cam.local:8080/stream
+
+# Health check
+curl http://naboo-cam.local:8080/health
 ```
 
 ### 5. Set Static IP
-Edit `/etc/dhcpcd.conf` or assign via router DHCP reservation.
-Keep same IP as the old XIAO (.163) to avoid code changes, or update `NABOO_CAMERA_URL` env var.
+Assign `.163` via router DHCP reservation (same as old XIAO) — zero code changes needed.
+Or set a new IP and update `NABOO_CAMERA_URL` env var + hardcoded URLs in `explore.py`.
 
 ## Endpoints
 | Path | Port | Description |
