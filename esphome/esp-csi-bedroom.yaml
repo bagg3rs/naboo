@@ -17,7 +17,7 @@ esp32:
       CONFIG_ESP_WIFI_CSI_ENABLED: "y"
 
 external_components:
-  - source: github://jagenjo/espectre
+  - source: github://francescopace/espectre
 
 wifi:
   ssid: "internetoftings"
