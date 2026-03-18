@@ -143,7 +143,7 @@ def capture_loop():
     cam.set_controls({
         "AfMode": 2,
         "AeEnable": True,
-        "AwbEnable": True,
+        "AwbEnable": True,        # Auto white balance — NoIR tint is unavoidable without IR filter
         "FrameRate": 20.0,
     })
 
