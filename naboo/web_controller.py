@@ -22,6 +22,7 @@ MQTT_PORT = int(os.environ.get("MQTT_PORT", "1883"))
 CAMERA_STREAM = os.environ.get("CAMERA_STREAM", "http://192.168.0.31:8080/stream")
 CAMERA_SNAPSHOT = os.environ.get("CAMERA_SNAPSHOT", "http://192.168.0.31:8080/")
 DETECT_URL = os.environ.get("DETECT_URL", "http://192.168.0.50:8081/detect")
+COLLECT_URL = os.environ.get("COLLECT_URL", "http://192.168.0.50:8082")
 
 app = FastAPI(title="Naboo Controller")
 
@@ -154,6 +155,12 @@ HTML = """<!DOCTYPE html>
   .detect-btn { margin: 8px; padding: 12px 24px; border: 2px solid #22c55e; background: transparent;
                 color: #22c55e; border-radius: 8px; font-size: 1em; cursor: pointer; }
   .detect-btn.active { background: #22c55e; color: white; }
+  .record-btn { margin: 8px; padding: 12px 24px; border: 2px solid #ef4444; background: transparent;
+                color: #ef4444; border-radius: 8px; font-size: 1em; cursor: pointer; }
+  .record-btn.active { background: #ef4444; color: white; animation: pulse 1s infinite; }
+  @keyframes pulse { 50% { opacity: 0.7; } }
+  .depth-container { width: 100%; max-width: 720px; display: flex; gap: 8px; margin: 8px 0; }
+  .depth-container img { flex: 1; border-radius: 8px; border: 1px solid #333; }
   .detect-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
   .detect-label { position: absolute; background: rgba(34,197,94,0.85); color: #000; padding: 2px 6px;
                   font-size: 0.75em; font-weight: bold; border-radius: 3px; white-space: nowrap; }
@@ -189,6 +196,12 @@ HTML = """<!DOCTYPE html>
 
 <button class="explore-btn" id="exploreBtn" onclick="toggleExplore()">🔍 Explore</button>
 <button class="detect-btn" id="detectBtn" onclick="toggleDetect()">👁️ Detect</button>
+<button class="record-btn" id="recordBtn" onclick="toggleRecord()">🔴 Record</button>
+<div id="recordInfo" style="color:#ef4444; font-size:0.9em; display:none;">Recording: <span id="frameCount">0</span> frames</div>
+
+<div class="depth-container" id="depthContainer" style="display:none;">
+  <img id="depthImg" alt="Depth Map" style="max-height:200px;">
+</div>
 
 <div class="speed-row" style="width:100%; max-width:640px;">
   <span>🐢</span>
@@ -341,9 +354,84 @@ function drawDetections(data) {
   html += `<div class="detect-info">${data.count || 0} objects · ${data.inference_ms || '?'}ms</div>`;
   overlay.innerHTML = html;
 }
+
+// Recording for TinyNav data collection
+const COLLECT_URL = 'COLLECT_SERVICE_URL';
+let isRecording = false;
+let recordTimer = null;
+let depthTimer = null;
+let currentSteering = 0;
+let currentThrottle = 0;
+
+function toggleRecord() {
+  if (!isRecording) {
+    fetch(COLLECT_URL + '/record/start', {method: 'POST'}).then(r => r.json()).then(data => {
+      if (data.status === 'recording') {
+        isRecording = true;
+        const btn = document.getElementById('recordBtn');
+        btn.classList.add('active');
+        btn.textContent = '⏹ Stop';
+        document.getElementById('recordInfo').style.display = 'block';
+        document.getElementById('depthContainer').style.display = 'flex';
+        recordTimer = setInterval(updateRecordStatus, 500);
+        depthTimer = setInterval(updateDepth, 300);
+      }
+    });
+  } else {
+    fetch(COLLECT_URL + '/record/stop', {method: 'POST'}).then(r => r.json()).then(data => {
+      isRecording = false;
+      const btn = document.getElementById('recordBtn');
+      btn.classList.remove('active');
+      btn.textContent = '🔴 Record';
+      document.getElementById('recordInfo').style.display = 'none';
+      document.getElementById('depthContainer').style.display = 'none';
+      clearInterval(recordTimer);
+      clearInterval(depthTimer);
+      if (data.frames) alert(`Saved ${data.frames} frames (${data.size_mb}MB)`);
+    });
+  }
+}
+
+function updateRecordStatus() {
+  fetch(COLLECT_URL + '/record/status').then(r => r.json()).then(data => {
+    document.getElementById('frameCount').textContent = data.frames;
+  }).catch(() => {});
+}
+
+function updateDepth() {
+  document.getElementById('depthImg').src = COLLECT_URL + '/depth?t=' + Date.now();
+}
+
+// Send motor state to collection service when recording
+const origSendCommand = (cmd, speed) => {
+  // Map commands to steering/throttle
+  if (cmd === 'forward') { currentSteering = 0; currentThrottle = speed/60; }
+  else if (cmd === 'backward') { currentSteering = 0; currentThrottle = -(speed/60); }
+  else if (cmd === 'left') { currentSteering = -1; currentThrottle = speed/60; }
+  else if (cmd === 'right') { currentSteering = 1; currentThrottle = speed/60; }
+  else if (cmd === 'stop') { currentSteering = 0; currentThrottle = 0; }
+
+  if (isRecording) {
+    fetch(COLLECT_URL + '/motor', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({steering: currentSteering, throttle: currentThrottle})
+    }).catch(() => {});
+  }
+};
+
+// Hook into existing command sending
+const _origWsSend = ws.send.bind(ws);
+ws.send = function(data) {
+  _origWsSend(data);
+  try {
+    const parsed = JSON.parse(data);
+    if (parsed.cmd) origSendCommand(parsed.cmd, parsed.speed || 30);
+  } catch(e) {}
+};
 </script>
 </body>
-</html>""".replace("CAMERA_STREAM_URL", CAMERA_STREAM).replace("CAMERA_SNAPSHOT_URL", CAMERA_SNAPSHOT).replace("DETECT_SERVICE_URL", DETECT_URL)
+</html>""".replace("CAMERA_STREAM_URL", CAMERA_STREAM).replace("CAMERA_SNAPSHOT_URL", CAMERA_SNAPSHOT).replace("DETECT_SERVICE_URL", DETECT_URL).replace("COLLECT_SERVICE_URL", COLLECT_URL)
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
