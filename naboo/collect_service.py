@@ -25,6 +25,7 @@ from threading import Lock, Thread
 import cv2
 import httpx
 import numpy as np
+import paho.mqtt.client as mqtt
 import torch
 from flask import Flask, Response, jsonify, request
 from flask_cors import CORS
@@ -37,9 +38,45 @@ CORS(app)
 
 # Config
 CAMERA_URL = os.environ.get("NABOO_CAMERA_URL", "http://192.168.0.31:8080/")
+MQTT_BROKER = os.environ.get("MQTT_BROKER", "192.168.0.50")
+MQTT_PORT = int(os.environ.get("MQTT_PORT", "1883"))
 DATA_DIR = os.environ.get("DATA_DIR", os.path.join(os.path.dirname(__file__), "..", "data", "recordings"))
 DEPTH_SIZE = 24  # TinyNav input resolution
 WINDOW_SIZE = 10  # Number of frames to stack
+
+# --- MQTT motor tracking ---
+# Maps mbot2/command messages to steering/throttle values
+COMMAND_MAP = {
+    "move_forward":  {"steering": 0.0, "throttle": 1.0},
+    "force_forward": {"steering": 0.0, "throttle": 1.0},
+    "move_backward": {"steering": 0.0, "throttle": -1.0},
+    "turn_left":     {"steering": -1.0, "throttle": 0.5},
+    "turn_right":    {"steering": 1.0, "throttle": 0.5},
+    "stop":          {"steering": 0.0, "throttle": 0.0},
+}
+
+current_motor = {"steering": 0.0, "throttle": 0.0}
+
+def on_mqtt_connect(client, userdata, flags, reason_code, properties):
+    client.subscribe("mbot2/command", qos=0)
+    log.info("MQTT connected, subscribed to mbot2/command")
+
+def on_mqtt_message(client, userdata, msg):
+    """Track actual motor commands from ANY source (web controller, explore, etc)."""
+    try:
+        data = json.loads(msg.payload.decode())
+        cmd_type = data.get("command_type", "")
+        if cmd_type in COMMAND_MAP:
+            speed = data.get("parameters", {}).get("speed", 30) / 60.0  # Normalize to 0-1
+            mapped = COMMAND_MAP[cmd_type]
+            current_motor["steering"] = mapped["steering"]
+            current_motor["throttle"] = mapped["throttle"] * speed
+    except Exception as e:
+        log.error(f"MQTT motor parse error: {e}")
+
+mqtt_client = mqtt.Client(client_id="naboo-collector", protocol=mqtt.MQTTv5)
+mqtt_client.on_connect = on_mqtt_connect
+mqtt_client.on_message = on_mqtt_message
 
 # --- MiDaS depth model ---
 log.info("Loading MiDaS small...")
@@ -55,7 +92,6 @@ record_lock = Lock()
 recorded_frames = []  # List of {"depth_24": np.array, "steering": float, "throttle": float, "timestamp": float}
 current_depth = None  # Latest depth map (full res for visualisation)
 current_depth_24 = None  # Latest 24x24 depth (for recording/display)
-current_motor = {"steering": 0.0, "throttle": 0.0}  # Updated by web controller via API
 depth_lock = Lock()
 
 
@@ -237,6 +273,11 @@ def health():
 
 
 if __name__ == "__main__":
+    # Connect MQTT to track motor commands from any source
+    mqtt_client.connect(MQTT_BROKER, MQTT_PORT, 60)
+    mqtt_client.loop_start()
+    log.info(f"MQTT connected to {MQTT_BROKER}:{MQTT_PORT}")
+
     t = Thread(target=depth_loop, daemon=True)
     t.start()
     log.info(f"Starting Naboo data collection service on :8082 (camera: {CAMERA_URL})")
