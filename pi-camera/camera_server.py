@@ -134,9 +134,12 @@ def capture_loop():
 
     cam = Picamera2()
 
+    from libcamera import Transform
+
     config = cam.create_still_configuration(
         main={"size": (1280, 720), "format": "RGB888"},
         buffer_count=2,
+        transform=Transform(hflip=True, vflip=True),  # 180° rotation (mounted upside down)
     )
     cam.configure(config)
 
