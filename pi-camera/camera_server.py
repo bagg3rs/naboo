@@ -39,21 +39,16 @@ CLASSES = [
     "person", "pottedplant", "sheep", "sofa", "train", "tvmonitor"
 ]
 
-# --- Frame buffer ---
+# --- Frame buffers (separate for stream vs snapshot) ---
 class FrameBuffer:
     """Thread-safe latest frame holder."""
     def __init__(self):
-        self.frame = None          # JPEG bytes
-        self.frame_array = None    # numpy RGB array (for detection)
+        self.frame = None
         self.condition = Condition()
-        self.timestamp = 0
 
-    def update(self, jpeg_bytes, rgb_array=None):
+    def update(self, jpeg_bytes):
         with self.condition:
             self.frame = jpeg_bytes
-            if rgb_array is not None:
-                self.frame_array = rgb_array
-            self.timestamp = time.time()
             self.condition.notify_all()
 
     def wait_for_frame(self, timeout=5.0):
@@ -61,7 +56,9 @@ class FrameBuffer:
             self.condition.wait(timeout=timeout)
             return self.frame
 
-buffer = FrameBuffer()
+stream_buffer = FrameBuffer()   # 640x480 hardware MJPEG (smooth stream)
+snapshot_buffer = FrameBuffer() # 1280x720 PIL (high-res snapshots + detection)
+detection_array = None          # numpy RGB for detection endpoint
 
 # --- Detector ---
 class Detector:
@@ -150,7 +147,7 @@ def capture_loop():
         "FrameRate": 20.0,
     })
 
-    # Custom output that feeds our buffer
+    # Custom output that feeds our stream buffer
     class BufferOutput(io.BufferedIOBase):
         def __init__(self):
             self._buf = io.BytesIO()
@@ -163,7 +160,7 @@ def capture_loop():
                 if self._buf.tell() > 0:
                     self._buf.seek(0)
                     frame_data = self._buf.read()
-                    buffer.update(frame_data)
+                    stream_buffer.update(frame_data)
                 self._buf = io.BytesIO()
             self._buf.write(data)
             return len(data)
@@ -177,17 +174,19 @@ def capture_loop():
 
     cam.start_encoder(encoder, FileOutput(output))
 
-    # Also capture full-res frames periodically for detection/snapshot quality
+    # Capture full-res frames for snapshot/detection (separate from stream)
+    global detection_array
     while True:
         try:
             frame = cam.capture_array("main")
+            detection_array = frame
             # Encode high-res snapshot
             img = Image.fromarray(frame)
             buf = io.BytesIO()
             img.save(buf, format="JPEG", quality=85)
             buf.seek(0)
-            buffer.update(buf.getvalue(), frame)
-            time.sleep(0.5)  # Full-res snapshot every 500ms (stream runs at 20fps via encoder)
+            snapshot_buffer.update(buf.getvalue())
+            time.sleep(1)  # Full-res every 1s (stream is independent at 20fps)
         except Exception as e:
             log.error(f"Capture error: {e}")
             time.sleep(1)
@@ -197,7 +196,8 @@ def capture_loop():
 
 @app.route("/")
 def snapshot():
-    frame = buffer.frame
+    # Prefer high-res snapshot, fallback to stream frame
+    frame = snapshot_buffer.frame or stream_buffer.frame
     if frame is None:
         return "Camera not ready", 503
     return Response(frame, mimetype="image/jpeg",
@@ -208,7 +208,7 @@ def snapshot():
 def stream():
     def generate():
         while True:
-            frame = buffer.wait_for_frame(timeout=5.0)
+            frame = stream_buffer.wait_for_frame(timeout=5.0)
             if frame is None:
                 continue
             yield (b"--frame\r\n"
@@ -218,7 +218,7 @@ def stream():
 
 @app.route("/detect")
 def detect():
-    rgb = buffer.frame_array
+    rgb = detection_array
     if rgb is None:
         return jsonify({"error": "Camera not ready"}), 503
     threshold = request.args.get("threshold", CONFIDENCE_THRESHOLD, type=float)
@@ -236,13 +236,13 @@ def detect():
 @app.route("/health")
 def health():
     status = {
-        "status": "ok" if buffer.frame is not None else "no_frames",
+        "status": "ok" if stream_buffer.frame is not None else "no_frames",
         "resolution": "1280x720",
         "camera": "imx708_wide_noir",
         "encoder": "hardware_mjpeg",
         "detector": "loaded" if detector.net is not None else "not_loaded",
     }
-    return jsonify(status), 200 if buffer.frame is not None else 503
+    return jsonify(status), 200 if stream_buffer.frame is not None else 503
 
 
 if __name__ == "__main__":
