@@ -62,15 +62,33 @@ def on_mqtt_connect(client, userdata, flags, reason_code, properties):
     log.info("MQTT connected, subscribed to mbot2/command")
 
 def on_mqtt_message(client, userdata, msg):
-    """Track actual motor commands from ANY source (web controller, explore, etc)."""
+    """Track actual motor commands from ANY source (web controller, explore, etc).
+    Also record a frame immediately on command change to capture brief turns."""
     try:
         data = json.loads(msg.payload.decode())
         cmd_type = data.get("command_type", "")
         if cmd_type in COMMAND_MAP:
             speed = data.get("parameters", {}).get("speed", 30) / 60.0  # Normalize to 0-1
             mapped = COMMAND_MAP[cmd_type]
-            current_motor["steering"] = mapped["steering"]
-            current_motor["throttle"] = mapped["throttle"] * speed
+            new_steering = mapped["steering"]
+            new_throttle = mapped["throttle"] * speed
+
+            # Record immediately on motor change (captures brief turns)
+            old_s, old_t = current_motor["steering"], current_motor["throttle"]
+            current_motor["steering"] = new_steering
+            current_motor["throttle"] = new_throttle
+
+            if (new_steering != old_s or new_throttle != old_t):
+                with record_lock:
+                    if recording:
+                        with depth_lock:
+                            if current_depth_24 is not None:
+                                recorded_frames.append({
+                                    "depth_24": current_depth_24.copy(),
+                                    "steering": new_steering,
+                                    "throttle": new_throttle,
+                                    "timestamp": time.time(),
+                                })
     except Exception as e:
         log.error(f"MQTT motor parse error: {e}")
 
