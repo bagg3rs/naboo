@@ -1,14 +1,16 @@
 """
-Naboo Pi Camera Server — lightweight HTTP snapshot + MJPEG stream + object detection.
+Naboo Pi Camera Server — hardware-accelerated MJPEG stream + snapshot + detection.
+
+Uses picamera2's built-in MJPEG encoder (GPU hardware) instead of software PIL encoding.
+Much smoother video on Pi Zero W.
 
 Endpoints:
-  GET /         → JPEG snapshot (compatible with XIAO interface)
-  GET /stream   → MJPEG live stream (for web controller)
+  GET /         → JPEG snapshot
+  GET /stream   → MJPEG live stream (hardware encoded)
   GET /detect   → JSON object detection (MobileNet SSD via OpenCV DNN)
   GET /health   → Health check
 
 Designed for Pi Zero W + Camera Module 3 NoIR Wide (IMX708).
-Runs as a systemd service on port 8080.
 """
 
 import io
@@ -31,7 +33,6 @@ app = Flask(__name__)
 MODEL_DIR = os.environ.get("MODEL_DIR", "/opt/naboo-cam/models")
 CONFIDENCE_THRESHOLD = 0.4
 
-# COCO class labels for MobileNet SSD
 CLASSES = [
     "background", "aeroplane", "bicycle", "bird", "boat", "bottle", "bus",
     "car", "cat", "chair", "cow", "diningtable", "dog", "horse", "motorbike",
@@ -40,16 +41,19 @@ CLASSES = [
 
 # --- Frame buffer ---
 class FrameBuffer:
-    """Thread-safe latest frame holder with notification."""
+    """Thread-safe latest frame holder."""
     def __init__(self):
         self.frame = None          # JPEG bytes
         self.frame_array = None    # numpy RGB array (for detection)
         self.condition = Condition()
+        self.timestamp = 0
 
-    def update(self, jpeg_bytes, rgb_array):
+    def update(self, jpeg_bytes, rgb_array=None):
         with self.condition:
             self.frame = jpeg_bytes
-            self.frame_array = rgb_array
+            if rgb_array is not None:
+                self.frame_array = rgb_array
+            self.timestamp = time.time()
             self.condition.notify_all()
 
     def wait_for_frame(self, timeout=5.0):
@@ -59,16 +63,14 @@ class FrameBuffer:
 
 buffer = FrameBuffer()
 
-# --- Object detector ---
+# --- Detector ---
 class Detector:
-    """MobileNet SSD object detection via OpenCV DNN."""
     def __init__(self):
         self.net = None
         self._lock = Lock()
         self._load_attempted = False
 
     def load(self):
-        """Lazy-load the model."""
         if self._load_attempted:
             return self.net is not None
         self._load_attempted = True
@@ -87,24 +89,20 @@ class Detector:
             return False
 
     def detect(self, rgb_array, threshold=None):
-        """Run detection on an RGB numpy array. Returns list of detections."""
         if threshold is None:
             threshold = CONFIDENCE_THRESHOLD
         if self.net is None:
             if not self.load():
                 return None
-
         import cv2
         with self._lock:
             h, w = rgb_array.shape[:2]
-            # MobileNet SSD expects 300x300 BGR
             blob = cv2.dnn.blobFromImage(
                 cv2.cvtColor(rgb_array, cv2.COLOR_RGB2BGR),
                 0.007843, (300, 300), 127.5
             )
             self.net.setInput(blob)
             detections_raw = self.net.forward()
-
         results = []
         for i in range(detections_raw.shape[2]):
             confidence = float(detections_raw[0, 0, i, 2])
@@ -117,56 +115,79 @@ class Detector:
             box = detections_raw[0, 0, i, 3:7] * np.array([w, h, w, h])
             x1, y1, x2, y2 = box.astype(int).tolist()
             results.append({
-                "label": label,
-                "confidence": round(confidence, 3),
+                "label": label, "confidence": round(confidence, 3),
                 "bbox": [x1, y1, x2, y2],
             })
-
         return results
 
 detector = Detector()
 
 
-# --- Camera capture ---
+# --- Camera capture (hardware MJPEG) ---
 def capture_loop():
-    """Continuous capture — always has a fresh frame for snapshots + detection."""
+    """Use picamera2 hardware MJPEG encoder for smooth streaming."""
     from picamera2 import Picamera2
+    from picamera2.encoders import MJPEGEncoder
+    from picamera2.outputs import FileOutput
+    from libcamera import Transform
 
     cam = Picamera2()
 
-    from libcamera import Transform
-
-    config = cam.create_still_configuration(
+    # Video config for streaming (lower res = smoother on Pi Zero)
+    video_config = cam.create_video_configuration(
         main={"size": (1280, 720), "format": "RGB888"},
-        buffer_count=2,
-        transform=Transform(hflip=True, vflip=True),  # 180° rotation (mounted upside down)
+        lores={"size": (640, 480), "format": "YUV420"},
+        encode="lores",
+        transform=Transform(hflip=True, vflip=True),
+        buffer_count=4,
     )
-    cam.configure(config)
+    cam.configure(video_config)
 
-    # Camera Module 3 NoIR Wide — autofocus + HDR
     cam.set_controls({
-        "AfMode": 2,       # Continuous autofocus
-        "AeEnable": True,  # Auto exposure
-        "AwbEnable": True,  # Auto white balance
+        "AfMode": 2,
+        "AeEnable": True,
+        "AwbEnable": True,
+        "FrameRate": 20.0,
     })
 
-    cam.start()
-    log.info("Camera started (1280x720, continuous AF)")
-    time.sleep(2)  # Let camera settle
+    # Custom output that feeds our buffer
+    class BufferOutput(io.BufferedIOBase):
+        def __init__(self):
+            self._buf = io.BytesIO()
 
+        def writable(self):
+            return True
+
+        def write(self, data):
+            if data[:2] == b'\xff\xd8':  # JPEG SOI marker — new frame
+                if self._buf.tell() > 0:
+                    self._buf.seek(0)
+                    frame_data = self._buf.read()
+                    buffer.update(frame_data)
+                self._buf = io.BytesIO()
+            self._buf.write(data)
+            return len(data)
+
+    output = BufferOutput()
+    encoder = MJPEGEncoder(bitrate=5000000)  # 5Mbps — good quality, smooth
+
+    cam.start()
+    log.info("Camera started (1280x720 main + 640x480 encode, hardware MJPEG, 20fps target)")
+    time.sleep(1)
+
+    cam.start_encoder(encoder, FileOutput(output))
+
+    # Also capture full-res frames periodically for detection/snapshot quality
     while True:
         try:
-            frame = cam.capture_array()
-
-            # Encode to JPEG
+            frame = cam.capture_array("main")
+            # Encode high-res snapshot
             img = Image.fromarray(frame)
             buf = io.BytesIO()
             img.save(buf, format="JPEG", quality=85)
             buf.seek(0)
-
             buffer.update(buf.getvalue(), frame)
-
-            time.sleep(0.1)  # ~10fps
+            time.sleep(0.5)  # Full-res snapshot every 500ms (stream runs at 20fps via encoder)
         except Exception as e:
             log.error(f"Capture error: {e}")
             time.sleep(1)
@@ -176,7 +197,6 @@ def capture_loop():
 
 @app.route("/")
 def snapshot():
-    """Return latest frame as JPEG."""
     frame = buffer.frame
     if frame is None:
         return "Camera not ready", 503
@@ -186,7 +206,6 @@ def snapshot():
 
 @app.route("/stream")
 def stream():
-    """MJPEG stream for web controller / browser viewing."""
     def generate():
         while True:
             frame = buffer.wait_for_frame(timeout=5.0)
@@ -199,48 +218,35 @@ def stream():
 
 @app.route("/detect")
 def detect():
-    """Run object detection on latest frame. Returns JSON.
-
-    Query params:
-        threshold: float (0-1, default 0.4)
-    """
     rgb = buffer.frame_array
     if rgb is None:
         return jsonify({"error": "Camera not ready"}), 503
-
     threshold = request.args.get("threshold", CONFIDENCE_THRESHOLD, type=float)
     t0 = time.time()
     results = detector.detect(rgb, threshold=threshold)
     elapsed_ms = round((time.time() - t0) * 1000)
-
     if results is None:
-        return jsonify({"error": "Model not loaded — check /opt/naboo-cam/models/"}), 500
-
+        return jsonify({"error": "Model not loaded"}), 500
     return jsonify({
-        "objects": results,
-        "count": len(results),
-        "inference_ms": elapsed_ms,
-        "resolution": [1280, 720],
+        "objects": results, "count": len(results),
+        "inference_ms": elapsed_ms, "resolution": [1280, 720],
     })
 
 
 @app.route("/health")
 def health():
-    """Health check."""
     status = {
         "status": "ok" if buffer.frame is not None else "no_frames",
         "resolution": "1280x720",
         "camera": "imx708_wide_noir",
+        "encoder": "hardware_mjpeg",
         "detector": "loaded" if detector.net is not None else "not_loaded",
     }
-    code = 200 if buffer.frame is not None else 503
-    return jsonify(status), code
+    return jsonify(status), 200 if buffer.frame is not None else 503
 
 
 if __name__ == "__main__":
     t = Thread(target=capture_loop, daemon=True)
     t.start()
-
-    # Lazy-load detector on first /detect call (saves RAM if unused)
     log.info("Starting Naboo camera server on :8080")
     app.run(host="0.0.0.0", port=8080, threaded=True)
