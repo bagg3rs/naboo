@@ -19,8 +19,8 @@ log = logging.getLogger("naboo.web_controller")
 
 MQTT_BROKER = os.environ.get("MQTT_BROKER", "192.168.0.50")
 MQTT_PORT = int(os.environ.get("MQTT_PORT", "1883"))
-CAMERA_STREAM = os.environ.get("CAMERA_STREAM", "http://192.168.0.163:8080")
-CAMERA_SNAPSHOT = os.environ.get("CAMERA_SNAPSHOT", "http://192.168.0.163/")
+CAMERA_STREAM = os.environ.get("CAMERA_STREAM", "http://192.168.0.31:8080")
+CAMERA_SNAPSHOT = os.environ.get("CAMERA_SNAPSHOT", "http://192.168.0.31:8080/")
 
 app = FastAPI(title="Naboo Controller")
 

@@ -16,6 +16,7 @@ import time
 from threading import Condition, Thread
 
 from flask import Flask, Response, send_file
+from PIL import Image
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("naboo-cam")
@@ -73,7 +74,6 @@ def capture_loop():
             frame = cam.capture_array()
 
             # Encode to JPEG
-            from PIL import Image
             img = Image.fromarray(frame)
             buf = io.BytesIO()
             img.save(buf, format="JPEG", quality=85)
