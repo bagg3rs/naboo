@@ -186,7 +186,7 @@ def capture_loop():
             img.save(buf, format="JPEG", quality=85)
             buf.seek(0)
             snapshot_buffer.update(buf.getvalue())
-            time.sleep(1)  # Full-res every 1s (stream is independent at 20fps)
+            time.sleep(0.3)  # Full-res every 300ms — keeps detection in sync with stream
         except Exception as e:
             log.error(f"Capture error: {e}")
             time.sleep(1)
