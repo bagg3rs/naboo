@@ -135,7 +135,7 @@ def capture_loop():
         main={"size": (1280, 720), "format": "RGB888"},
         lores={"size": (640, 480), "format": "YUV420"},
         encode="lores",
-        transform=Transform(hflip=True, vflip=True),
+        transform=Transform(hflip=False, vflip=False),  # ribbon under battery = right-way up
         buffer_count=4,
     )
     cam.configure(video_config)
