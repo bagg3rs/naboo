@@ -1,15 +1,15 @@
 """
-Naboo Object Detection Service — runs on Mac mini (.50).
+Naboo Object Detection Service — YOLOv8n on Mac mini (.50).
 
-Grabs snapshot from Pi Zero camera server, runs MobileNet SSD inference locally.
-Much faster than running on Pi Zero (~10-50ms vs 70s).
+Grabs snapshot from Pi Zero camera server, runs YOLOv8 nano inference locally.
+~10-30ms inference on M4 with much tighter bounding boxes than MobileNet SSD.
 
 Endpoints:
   GET /detect          → JSON detections from latest Pi camera snapshot
   GET /detect?annotate → JPEG with bounding boxes drawn
   GET /health          → Health check
 
-Port: 8081 (avoids conflict with Ollama 11434, MLX 11435, MQTT 1883)
+Port: 8081
 """
 
 import io
@@ -27,35 +27,34 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 log = logging.getLogger("naboo-detect")
 
 app = Flask(__name__)
-CORS(app)  # Allow cross-origin requests from web controller
+CORS(app)
 
 # Config
 CAMERA_URL = os.environ.get("NABOO_CAMERA_URL", "http://192.168.0.31:8080/")
-MODEL_DIR = os.path.join(os.path.dirname(__file__), "..", "models")
-CONFIDENCE_THRESHOLD = 0.4
+CONFIDENCE_THRESHOLD = 0.35
 
-# COCO class labels for MobileNet SSD
-CLASSES = [
-    "background", "aeroplane", "bicycle", "bird", "boat", "bottle", "bus",
-    "car", "cat", "chair", "cow", "diningtable", "dog", "horse", "motorbike",
-    "person", "pottedplant", "sheep", "sofa", "train", "tvmonitor"
-]
+# Load YOLOv8n — auto-downloads on first run (~6MB)
+from ultralytics import YOLO
+model = YOLO("yolov8n.pt")
+log.info("YOLOv8n loaded OK")
+
+# COCO class names come from the model
+CLASS_NAMES = model.names  # dict {0: 'person', 1: 'bicycle', ...}
 
 COLORS = {
     "person": (0, 255, 0),
     "chair": (255, 165, 0),
     "sofa": (0, 165, 255),
+    "couch": (0, 165, 255),
     "cat": (255, 0, 255),
     "dog": (255, 0, 255),
     "bird": (0, 255, 255),
-    "tvmonitor": (255, 255, 0),
+    "tv": (255, 255, 0),
+    "laptop": (255, 255, 0),
+    "cell phone": (200, 200, 0),
+    "bottle": (0, 200, 200),
+    "cup": (0, 200, 200),
 }
-
-# Load model at startup (M4 handles this in <1s)
-prototxt = os.path.join(MODEL_DIR, "deploy.prototxt")
-weights = os.path.join(MODEL_DIR, "mobilenet_ssd.caffemodel")
-net = cv2.dnn.readNetFromCaffe(prototxt, weights)
-log.info("MobileNet SSD loaded OK")
 
 
 def fetch_frame():
@@ -73,33 +72,26 @@ def fetch_frame():
 
 
 def run_detection(img, threshold=None):
-    """Run MobileNet SSD on a BGR image. Returns list of detections."""
+    """Run YOLOv8n on a BGR image. Returns list of detections."""
     if threshold is None:
         threshold = CONFIDENCE_THRESHOLD
 
-    h, w = img.shape[:2]
-    blob = cv2.dnn.blobFromImage(img, 0.007843, (300, 300), 127.5)
-    net.setInput(blob)
-    detections_raw = net.forward()
+    results = model(img, conf=threshold, verbose=False)[0]
 
-    results = []
-    for i in range(detections_raw.shape[2]):
-        confidence = float(detections_raw[0, 0, i, 2])
-        if confidence < threshold:
-            continue
-        class_id = int(detections_raw[0, 0, i, 1])
-        label = CLASSES[class_id] if class_id < len(CLASSES) else f"class_{class_id}"
-        if label == "background":
-            continue
-        box = detections_raw[0, 0, i, 3:7] * np.array([w, h, w, h])
-        x1, y1, x2, y2 = box.astype(int).tolist()
-        results.append({
+    detections = []
+    for box in results.boxes:
+        x1, y1, x2, y2 = box.xyxy[0].cpu().numpy().astype(int).tolist()
+        confidence = float(box.conf[0])
+        class_id = int(box.cls[0])
+        label = CLASS_NAMES.get(class_id, f"class_{class_id}")
+
+        detections.append({
             "label": label,
             "confidence": round(confidence, 3),
             "bbox": [x1, y1, x2, y2],
         })
 
-    return results
+    return detections
 
 
 def annotate_image(img, detections):
@@ -155,7 +147,7 @@ def detect():
 
 @app.route("/health")
 def health():
-    return jsonify({"status": "ok", "model": "mobilenet_ssd_v1", "camera": CAMERA_URL})
+    return jsonify({"status": "ok", "model": "yolov8n", "camera": CAMERA_URL})
 
 
 if __name__ == "__main__":

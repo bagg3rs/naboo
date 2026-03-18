@@ -125,11 +125,11 @@ HTML = """<!DOCTYPE html>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { background: #1a1a2e; color: #e0e0e0; font-family: system-ui, sans-serif;
-         display: flex; flex-direction: column; align-items: center; height: 100vh; padding: 10px; }
+         display: flex; flex-direction: column; align-items: center; min-height: 100vh; padding: 10px; }
   h1 { color: #a855f7; margin: 8px 0; font-size: 1.4em; }
-  .video-container { position: relative; width: 100%; max-width: 640px;
+  .video-container { position: relative; width: 100%; max-width: 720px;
                      border: 2px solid #a855f7; border-radius: 8px; overflow: hidden; }
-  .video-container img { width: 100%; aspect-ratio: 16/9; object-fit: contain; display: block; background: #000; }
+  .video-container img { width: 100%; height: auto; display: block; }
   .controls { display: grid; grid-template-areas: ". up ." "left stop right" ". down .";
               gap: 8px; margin: 12px 0; }
   .btn { width: 70px; height: 70px; border: none; border-radius: 12px; font-size: 28px;
