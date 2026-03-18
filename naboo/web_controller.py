@@ -204,10 +204,14 @@ HTML = """<!DOCTYPE html>
 </div>
 
 <div class="speed-row" style="width:100%; max-width:640px;">
-  <span>🐢</span>
-  <input type="range" id="speedSlider" min="15" max="60" value="30" oninput="document.getElementById('speedVal').textContent=this.value">
-  <span>🐇</span>
-  <span id="speedVal" style="min-width:2em; text-align:center;">30</span>
+  <span>🏎️ Drive</span>
+  <input type="range" id="speedSlider" min="15" max="60" value="35" oninput="document.getElementById('speedVal').textContent=this.value">
+  <span id="speedVal" style="min-width:2em; text-align:center;">35</span>
+</div>
+<div class="speed-row" style="width:100%; max-width:640px;">
+  <span>🔄 Turn</span>
+  <input type="range" id="turnSlider" min="10" max="40" value="20" oninput="document.getElementById('turnVal').textContent=this.value">
+  <span id="turnVal" style="min-width:2em; text-align:center;">20</span>
 </div>
 
 <div style="display:flex; gap:8px; margin:10px 0; width:100%; max-width:640px;">
@@ -248,7 +252,8 @@ document.querySelectorAll('.btn[data-cmd]').forEach(btn => {
   const start = (e) => {
     e.preventDefault();
     btn.classList.add('active');
-    const speed = parseInt(document.getElementById('speedSlider').value);
+    const isTurn = (cmd === 'left' || cmd === 'right');
+    const speed = parseInt(document.getElementById(isTurn ? 'turnSlider' : 'speedSlider').value);
     ws.send(JSON.stringify({cmd, speed}));
   };
   const end = (e) => {
@@ -270,8 +275,10 @@ const pressed = new Set();
 document.addEventListener('keydown', (e) => {
   if (keyMap[e.key] && !pressed.has(e.key)) {
     pressed.add(e.key);
-    const speed = parseInt(document.getElementById('speedSlider').value);
-    ws.send(JSON.stringify({cmd: keyMap[e.key], speed}));
+    const cmd = keyMap[e.key];
+    const isTurn = (cmd === 'left' || cmd === 'right');
+    const speed = parseInt(document.getElementById(isTurn ? 'turnSlider' : 'speedSlider').value);
+    ws.send(JSON.stringify({cmd, speed}));
     const btn = document.querySelector(`[data-cmd="${keyMap[e.key]}"]`);
     if (btn) btn.classList.add('active');
   }
