@@ -19,8 +19,9 @@ log = logging.getLogger("naboo.web_controller")
 
 MQTT_BROKER = os.environ.get("MQTT_BROKER", "192.168.0.50")
 MQTT_PORT = int(os.environ.get("MQTT_PORT", "1883"))
-CAMERA_STREAM = os.environ.get("CAMERA_STREAM", "http://192.168.0.31:8080")
+CAMERA_STREAM = os.environ.get("CAMERA_STREAM", "http://192.168.0.31:8080/stream")
 CAMERA_SNAPSHOT = os.environ.get("CAMERA_SNAPSHOT", "http://192.168.0.31:8080/")
+DETECT_URL = os.environ.get("DETECT_URL", "http://192.168.0.50:8081/detect")
 
 app = FastAPI(title="Naboo Controller")
 
@@ -150,6 +151,15 @@ HTML = """<!DOCTYPE html>
   .explore-btn { margin: 8px; padding: 12px 24px; border: 2px solid #a855f7; background: transparent;
                  color: #a855f7; border-radius: 8px; font-size: 1em; cursor: pointer; }
   .explore-btn.active { background: #a855f7; color: white; }
+  .detect-btn { margin: 8px; padding: 12px 24px; border: 2px solid #22c55e; background: transparent;
+                color: #22c55e; border-radius: 8px; font-size: 1em; cursor: pointer; }
+  .detect-btn.active { background: #22c55e; color: white; }
+  .detect-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
+  .detect-label { position: absolute; background: rgba(34,197,94,0.85); color: #000; padding: 2px 6px;
+                  font-size: 0.75em; font-weight: bold; border-radius: 3px; white-space: nowrap; }
+  .detect-box { position: absolute; border: 2px solid #22c55e; border-radius: 2px; }
+  .detect-info { position: absolute; bottom: 4px; right: 4px; background: rgba(0,0,0,0.7);
+                 color: #22c55e; padding: 2px 8px; font-size: 0.75em; border-radius: 4px; }
   .speed-row { display: flex; align-items: center; gap: 10px; margin: 8px 0; font-size: 0.95em; }
   .speed-row input[type=range] { flex: 1; accent-color: #a855f7; }
 </style>
@@ -158,7 +168,8 @@ HTML = """<!DOCTYPE html>
 <h1>🤖 Naboo Controller</h1>
 
 <div class="video-container" id="videoBox">
-  <img src="CAMERA_STREAM_URL" alt="Camera Feed" onerror="this.src='CAMERA_SNAPSHOT_URL'; setTimeout(()=>this.src='CAMERA_STREAM_URL',3000)">
+  <img id="camFeed" src="CAMERA_STREAM_URL" alt="Camera Feed" onerror="this.src='CAMERA_SNAPSHOT_URL'; setTimeout(()=>this.src='CAMERA_STREAM_URL',3000)">
+  <div class="detect-overlay" id="detectOverlay"></div>
 </div>
 
 <div class="telemetry">
@@ -177,6 +188,7 @@ HTML = """<!DOCTYPE html>
 </div>
 
 <button class="explore-btn" id="exploreBtn" onclick="toggleExplore()">🔍 Explore</button>
+<button class="detect-btn" id="detectBtn" onclick="toggleDetect()">👁️ Detect</button>
 
 <div class="speed-row" style="width:100%; max-width:640px;">
   <span>🐢</span>
@@ -276,9 +288,62 @@ function sendTTS() {
     input.value = '';
   }
 }
+
+// Object detection overlay
+let detecting = false;
+let detectTimer = null;
+const DETECT_URL = 'DETECT_SERVICE_URL';
+
+function toggleDetect() {
+  detecting = !detecting;
+  const btn = document.getElementById('detectBtn');
+  btn.classList.toggle('active', detecting);
+  btn.textContent = detecting ? '🛑 Stop Detect' : '👁️ Detect';
+  if (detecting) {
+    runDetection();
+  } else {
+    clearTimeout(detectTimer);
+    document.getElementById('detectOverlay').innerHTML = '';
+  }
+}
+
+async function runDetection() {
+  if (!detecting) return;
+  try {
+    const r = await fetch(DETECT_URL);
+    const data = await r.json();
+    drawDetections(data);
+  } catch (e) {
+    console.error('Detection error:', e);
+  }
+  detectTimer = setTimeout(runDetection, 500);  // 2fps detection
+}
+
+function drawDetections(data) {
+  const overlay = document.getElementById('detectOverlay');
+  const img = document.getElementById('camFeed');
+  const w = img.clientWidth;
+  const h = img.clientHeight;
+  const [srcW, srcH] = data.resolution || [1280, 720];
+  const scaleX = w / srcW;
+  const scaleY = h / srcH;
+
+  let html = '';
+  for (const obj of (data.objects || [])) {
+    const [x1, y1, x2, y2] = obj.bbox;
+    const left = x1 * scaleX;
+    const top = y1 * scaleY;
+    const bw = (x2 - x1) * scaleX;
+    const bh = (y2 - y1) * scaleY;
+    html += `<div class="detect-box" style="left:${left}px;top:${top}px;width:${bw}px;height:${bh}px"></div>`;
+    html += `<div class="detect-label" style="left:${left}px;top:${Math.max(0,top-20)}px">${obj.label} ${Math.round(obj.confidence*100)}%</div>`;
+  }
+  html += `<div class="detect-info">${data.count || 0} objects · ${data.inference_ms || '?'}ms</div>`;
+  overlay.innerHTML = html;
+}
 </script>
 </body>
-</html>""".replace("CAMERA_STREAM_URL", CAMERA_STREAM).replace("CAMERA_SNAPSHOT_URL", CAMERA_SNAPSHOT)
+</html>""".replace("CAMERA_STREAM_URL", CAMERA_STREAM).replace("CAMERA_SNAPSHOT_URL", CAMERA_SNAPSHOT).replace("DETECT_SERVICE_URL", DETECT_URL)
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
