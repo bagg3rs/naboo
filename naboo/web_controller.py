@@ -129,7 +129,7 @@ HTML = """<!DOCTYPE html>
   h1 { color: #a855f7; margin: 8px 0; font-size: 1.4em; }
   .video-container { position: relative; width: 100%; max-width: 640px;
                      border: 2px solid #a855f7; border-radius: 8px; overflow: hidden; }
-  .video-container img { width: 100%; display: block; }
+  .video-container img { width: 100%; aspect-ratio: 16/9; object-fit: contain; display: block; background: #000; }
   .controls { display: grid; grid-template-areas: ". up ." "left stop right" ". down .";
               gap: 8px; margin: 12px 0; }
   .btn { width: 70px; height: 70px; border: none; border-radius: 12px; font-size: 28px;

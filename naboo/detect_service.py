@@ -21,11 +21,13 @@ import cv2
 import httpx
 import numpy as np
 from flask import Flask, Response, jsonify, request
+from flask_cors import CORS
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("naboo-detect")
 
 app = Flask(__name__)
+CORS(app)  # Allow cross-origin requests from web controller
 
 # Config
 CAMERA_URL = os.environ.get("NABOO_CAMERA_URL", "http://192.168.0.31:8080/")
