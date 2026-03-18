@@ -363,6 +363,21 @@ let depthTimer = null;
 let currentSteering = 0;
 let currentThrottle = 0;
 
+// Sync record button with backend state on page load
+fetch(COLLECT_URL + '/record/status').then(r => r.json()).then(data => {
+  if (data.recording) {
+    isRecording = true;
+    const btn = document.getElementById('recordBtn');
+    btn.classList.add('active');
+    btn.textContent = '⏹ Stop';
+    document.getElementById('recordInfo').style.display = 'block';
+    document.getElementById('frameCount').textContent = data.frames;
+    document.getElementById('depthContainer').style.display = 'flex';
+    recordTimer = setInterval(updateRecordStatus, 500);
+    depthTimer = setInterval(updateDepth, 300);
+  }
+}).catch(() => {});
+
 function toggleRecord() {
   if (!isRecording) {
     fetch(COLLECT_URL + '/record/start', {method: 'POST'}).then(r => r.json()).then(data => {
