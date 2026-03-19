@@ -18,8 +18,8 @@ log = logging.getLogger("naboo.collect_drive")
 SPEED_FWD = 22
 SPEED_TURN = 20
 SPEED_BACK = 18
-SAFETY_CM = 20
-CAUTION_CM = 35
+SAFETY_CM = 15
+CAUTION_CM = 25
 MAX_SECS = 600  # 10 minutes per run
 BOUNCE_WINDOW = 15
 BOUNCE_LIMIT = 3
@@ -29,7 +29,7 @@ TURN_DURATION_MIN = 0.4
 TURN_DURATION_MAX = 1.2
 FORWARD_DURATION_MIN = 1.0
 FORWARD_DURATION_MAX = 4.0
-RANDOM_TURN_CHANCE = 0.15  # 15% chance of random turn each cycle
+RANDOM_TURN_CHANCE = 0.08  # 8% chance of random turn each cycle
 
 
 class CollectDriver:
@@ -88,7 +88,7 @@ class CollectDriver:
         # IMU-based collision: sudden pitch change or deceleration spike
         now = time.monotonic()
         if now > self._impact_cooldown:
-            if abs(self._pitch) > 8 or abs(self._accel_x) > 2:
+            if abs(self._pitch) > 12 or abs(self._accel_x) > 3:
                 log.info("💥 IMU impact detected: pitch=%.1f accel_x=%.1f", self._pitch, self._accel_x)
                 self._collision = True
                 self._impact_cooldown = now + 1.5  # 1.5s cooldown

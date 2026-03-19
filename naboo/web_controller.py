@@ -197,6 +197,8 @@ HTML = """<!DOCTYPE html>
   <span>📐 <span id="tilt">--</span></span>
 </div>
 
+<canvas id="pathCanvas" width="300" height="300" style="border:1px solid #333; border-radius:8px; background:#111; margin:8px 0;"></canvas>
+
 <div class="controls">
   <button class="btn btn-up" data-cmd="forward">▲</button>
   <button class="btn btn-left" data-cmd="left">◄</button>
@@ -264,6 +266,71 @@ function connectWS() {
   };
 }
 connectWS();
+
+// Path tracker — estimate position from motor commands
+const pathCanvas = document.getElementById('pathCanvas');
+const pathCtx = pathCanvas.getContext('2d');
+let pathX = 150, pathY = 150, pathHeading = 0; // Start center, facing up
+let pathHistory = [{x: pathX, y: pathY}];
+const PIXELS_PER_MM = 0.3;  // Scale factor
+const TURN_RATE = 90;  // degrees per second at speed 20
+
+function updatePath(steering, throttle) {
+  const dt = 0.25;  // ~4Hz update rate
+  if (Math.abs(steering) > 0.1) {
+    pathHeading += steering * TURN_RATE * dt;
+  }
+  if (Math.abs(throttle) > 0.05) {
+    const speed = throttle * 100 * PIXELS_PER_MM;  // mm/s estimate
+    pathX += Math.sin(pathHeading * Math.PI / 180) * speed * dt;
+    pathY -= Math.cos(pathHeading * Math.PI / 180) * speed * dt;
+  }
+  pathHistory.push({x: pathX, y: pathY});
+  if (pathHistory.length > 2000) pathHistory.shift();
+  drawPath();
+}
+
+function drawPath() {
+  pathCtx.fillStyle = '#111';
+  pathCtx.fillRect(0, 0, 300, 300);
+  if (pathHistory.length < 2) return;
+
+  // Draw trail
+  pathCtx.strokeStyle = '#22c55e';
+  pathCtx.lineWidth = 1.5;
+  pathCtx.globalAlpha = 0.6;
+  pathCtx.beginPath();
+  pathCtx.moveTo(pathHistory[0].x, pathHistory[0].y);
+  for (let i = 1; i < pathHistory.length; i++) {
+    pathCtx.lineTo(pathHistory[i].x, pathHistory[i].y);
+  }
+  pathCtx.stroke();
+  pathCtx.globalAlpha = 1;
+
+  // Draw current position
+  const last = pathHistory[pathHistory.length - 1];
+  pathCtx.fillStyle = '#ef4444';
+  pathCtx.beginPath();
+  pathCtx.arc(last.x, last.y, 4, 0, Math.PI * 2);
+  pathCtx.fill();
+
+  // Draw heading arrow
+  const arrowLen = 12;
+  const ax = last.x + Math.sin(pathHeading * Math.PI / 180) * arrowLen;
+  const ay = last.y - Math.cos(pathHeading * Math.PI / 180) * arrowLen;
+  pathCtx.strokeStyle = '#ef4444';
+  pathCtx.lineWidth = 2;
+  pathCtx.beginPath();
+  pathCtx.moveTo(last.x, last.y);
+  pathCtx.lineTo(ax, ay);
+  pathCtx.stroke();
+
+  // Start marker
+  pathCtx.fillStyle = '#3b82f6';
+  pathCtx.beginPath();
+  pathCtx.arc(pathHistory[0].x, pathHistory[0].y, 3, 0, Math.PI * 2);
+  pathCtx.fill();
+}
 
 // Button controls — hold to move, release to stop
 document.querySelectorAll('.btn[data-cmd]').forEach(btn => {
@@ -492,6 +559,10 @@ function toggleRecord() {
 function updateRecordStatus() {
   fetch(COLLECT_URL + '/record/status').then(r => r.json()).then(data => {
     document.getElementById('frameCount').textContent = data.frames;
+    // Update path from motor state during collect mode
+    if (data.motor) {
+      updatePath(data.motor.steering || 0, data.motor.throttle || 0);
+    }
   }).catch(() => {});
 }
 
@@ -507,6 +578,7 @@ const origSendCommand = (cmd, speed) => {
   else if (cmd === 'left') { currentSteering = -1; currentThrottle = speed/60; }
   else if (cmd === 'right') { currentSteering = 1; currentThrottle = speed/60; }
   else if (cmd === 'stop') { currentSteering = 0; currentThrottle = 0; }
+  updatePath(currentSteering, currentThrottle);
 
   if (isRecording) {
     fetch(COLLECT_URL + '/motor', {
