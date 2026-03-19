@@ -206,9 +206,9 @@ HTML = """<!DOCTYPE html>
 </div>
 
 <button class="explore-btn" id="exploreBtn" onclick="toggleExplore()">🔍 Explore</button>
-<button class="collect-btn" id="collectBtn" onclick="toggleCollect()">📊 Collect</button>
+<button class="collect-btn" id="collectBtn" onclick="toggleCollectAndRecord()">📊 Collect + Record</button>
 <button class="detect-btn" id="detectBtn" onclick="toggleDetect()">👁️ Detect</button>
-<button class="record-btn" id="recordBtn" onclick="toggleRecord()">🔴 Record</button>
+<button class="record-btn" id="recordBtn" onclick="toggleRecord()">🔴 Record Only</button>
 <div id="recordInfo" style="color:#ef4444; font-size:0.9em; display:none;">Recording: <span id="frameCount">0</span> frames</div>
 
 <div class="depth-container" id="depthContainer" style="display:none;">
@@ -236,26 +236,34 @@ HTML = """<!DOCTYPE html>
 <div class="status" id="status">Connecting...</div>
 
 <script>
-const ws = new WebSocket(`ws://${location.host}/ws`);
+let ws;
 let exploring = false;
 
-ws.onopen = () => { document.getElementById('status').textContent = 'Connected'; };
-ws.onclose = () => { document.getElementById('status').textContent = 'Disconnected'; };
-ws.onmessage = (e) => {
-  const data = JSON.parse(e.data);
-  if (data.type === 'telemetry') {
-    document.getElementById('dist').textContent = Math.round(data.d || 0);
-    document.getElementById('batt').textContent = Math.round(data.b || 0);
-    document.getElementById('heading').textContent = Math.round(data.h || 0);
-    const roll = Math.round(data.roll || 0);
-    const pitch = Math.round(data.pitch || 0);
-    const az = data.az || 0;
-    document.getElementById('tilt').textContent = az > 5 ? '🙃 UPSIDE DOWN' : `R${roll}° P${pitch}°`;
-  } else if (data.type === 'collision') {
-    document.getElementById('videoBox').classList.add('collision');
-    setTimeout(() => document.getElementById('videoBox').classList.remove('collision'), 1000);
-  }
-};
+function connectWS() {
+  ws = new WebSocket(`ws://${location.host}/ws`);
+  ws.onopen = () => { document.getElementById('status').textContent = 'Connected'; };
+  ws.onclose = () => {
+    document.getElementById('status').textContent = 'Reconnecting...';
+    setTimeout(connectWS, 2000);
+  };
+  ws.onerror = () => { ws.close(); };
+  ws.onmessage = (e) => {
+    const data = JSON.parse(e.data);
+    if (data.type === 'telemetry') {
+      document.getElementById('dist').textContent = Math.round(data.d || 0);
+      document.getElementById('batt').textContent = Math.round(data.b || 0);
+      document.getElementById('heading').textContent = Math.round(data.h || 0);
+      const roll = Math.round(data.roll || 0);
+      const pitch = Math.round(data.pitch || 0);
+      const az = data.az || 0;
+      document.getElementById('tilt').textContent = az > 5 ? '🙃 UPSIDE DOWN' : `R${roll}° P${pitch}°`;
+    } else if (data.type === 'collision') {
+      document.getElementById('videoBox').classList.add('collision');
+      setTimeout(() => document.getElementById('videoBox').classList.remove('collision'), 1000);
+    }
+  };
+}
+connectWS();
 
 // Button controls — hold to move, release to stop
 document.querySelectorAll('.btn[data-cmd]').forEach(btn => {
@@ -317,8 +325,47 @@ function toggleCollect() {
   collecting = !collecting;
   const btn = document.getElementById('collectBtn');
   btn.classList.toggle('active', collecting);
-  btn.textContent = collecting ? '🛑 Stop Collect' : '📊 Collect';
+  btn.textContent = collecting ? '🛑 Stop Collect' : '📊 Collect + Record';
   ws.send(JSON.stringify({cmd: collecting ? 'collect' : 'stop_collect'}));
+}
+
+function toggleCollectAndRecord() {
+  if (!collecting) {
+    // Start both: record first, then collect
+    fetch(COLLECT_URL + '/record/start', {method: 'POST'}).then(r => r.json()).then(data => {
+      if (data.status === 'recording' || data.error === 'Already recording') {
+        isRecording = true;
+        document.getElementById('recordBtn').classList.add('active');
+        document.getElementById('recordBtn').textContent = '⏹ Stop Record';
+        document.getElementById('recordInfo').style.display = 'block';
+        document.getElementById('depthContainer').style.display = 'flex';
+        recordTimer = setInterval(updateRecordStatus, 500);
+        depthTimer = setInterval(updateDepth, 300);
+      }
+    }).then(() => {
+      collecting = true;
+      const btn = document.getElementById('collectBtn');
+      btn.classList.add('active');
+      btn.textContent = '🛑 Stop';
+      ws.send(JSON.stringify({cmd: 'collect'}));
+    });
+  } else {
+    // Stop both: collect first, then record
+    ws.send(JSON.stringify({cmd: 'stop_collect'}));
+    collecting = false;
+    document.getElementById('collectBtn').classList.remove('active');
+    document.getElementById('collectBtn').textContent = '📊 Collect + Record';
+    fetch(COLLECT_URL + '/record/stop', {method: 'POST'}).then(r => r.json()).then(data => {
+      isRecording = false;
+      document.getElementById('recordBtn').classList.remove('active');
+      document.getElementById('recordBtn').textContent = '🔴 Record Only';
+      document.getElementById('recordInfo').style.display = 'none';
+      document.getElementById('depthContainer').style.display = 'none';
+      clearInterval(recordTimer);
+      clearInterval(depthTimer);
+      if (data.frames) alert('Saved ' + data.frames + ' frames (' + data.size_mb + 'MB)');
+    });
+  }
 }
 
 function sendTTS() {

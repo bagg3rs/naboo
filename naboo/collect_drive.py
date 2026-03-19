@@ -88,10 +88,10 @@ class CollectDriver:
         # IMU-based collision: sudden pitch change or deceleration spike
         now = time.monotonic()
         if now > self._impact_cooldown:
-            if abs(self._pitch) > 15 or abs(self._accel_x) > 3:
+            if abs(self._pitch) > 8 or abs(self._accel_x) > 2:
                 log.info("💥 IMU impact detected: pitch=%.1f accel_x=%.1f", self._pitch, self._accel_x)
                 self._collision = True
-                self._impact_cooldown = now + 2.0  # 2s cooldown
+                self._impact_cooldown = now + 1.5  # 1.5s cooldown
 
     def on_collision(self):
         self._collision = True
