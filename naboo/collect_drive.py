@@ -15,11 +15,11 @@ from collections import deque
 
 log = logging.getLogger("naboo.collect_drive")
 
-SPEED_FWD = 30
-SPEED_TURN = 25
-SPEED_BACK = 20
-SAFETY_CM = 15
-CAUTION_CM = 30
+SPEED_FWD = 22
+SPEED_TURN = 20
+SPEED_BACK = 18
+SAFETY_CM = 20
+CAUTION_CM = 35
 MAX_SECS = 600  # 10 minutes per run
 BOUNCE_WINDOW = 15
 BOUNCE_LIMIT = 3
@@ -45,6 +45,9 @@ class CollectDriver:
         self._collision: bool = False
         self._bounces: deque[float] = deque()
         self._last_turn_dir = None  # Alternate turns
+        self._pitch: float = 0.0
+        self._accel_x: float = 0.0
+        self._impact_cooldown: float = 0.0  # Prevent double-triggers
 
     async def start(self):
         if self._running:
@@ -78,7 +81,17 @@ class CollectDriver:
     def on_telemetry(self, data: dict):
         self._distance = float(data.get("d", 999))
         self._battery = float(data.get("b", 100))
+        self._pitch = float(data.get("pitch", 0))
+        self._accel_x = float(data.get("ax", 0))
         self._last_telem = time.monotonic()
+
+        # IMU-based collision: sudden pitch change or deceleration spike
+        now = time.monotonic()
+        if now > self._impact_cooldown:
+            if abs(self._pitch) > 15 or abs(self._accel_x) > 3:
+                log.info("💥 IMU impact detected: pitch=%.1f accel_x=%.1f", self._pitch, self._accel_x)
+                self._collision = True
+                self._impact_cooldown = now + 2.0  # 2s cooldown
 
     def on_collision(self):
         self._collision = True

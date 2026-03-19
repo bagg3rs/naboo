@@ -141,9 +141,9 @@ def capture_loop():
     cam.configure(video_config)
 
     cam.set_controls({
-        "AfMode": 2,
+        "AfMode": 2,              # Continuous autofocus
         "AeEnable": True,
-        "AwbEnable": True,        # Auto white balance — NoIR tint is unavoidable without IR filter
+        "AwbEnable": True,
         "FrameRate": 20.0,
     })
 
