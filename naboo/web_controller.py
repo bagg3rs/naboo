@@ -53,6 +53,7 @@ def _ha_tts(text: str):
         log.error("TTS error: %s", e)
 
 from naboo.collect_drive import CollectDriver
+from naboo.cnn_drive import CNNDriver
 
 # ── MQTT ──────────────────────────────────────────────────────────────────────
 
@@ -60,6 +61,7 @@ mqtt_client = mqtt.Client(client_id="naboo-web-controller", protocol=mqtt.MQTTv5
 telemetry_data = {"d": 0, "b": 0, "dm": 0, "h": 0}
 ws_clients: list[WebSocket] = []
 collect_driver = None  # type: CollectDriver
+cnn_driver = None  # type: CNNDriver
 
 
 def on_connect(client, userdata, flags, reason_code, properties):
@@ -166,6 +168,9 @@ HTML = """<!DOCTYPE html>
   .collect-btn { margin: 8px; padding: 12px 24px; border: 2px solid #f59e0b; background: transparent;
                  color: #f59e0b; border-radius: 8px; font-size: 1em; cursor: pointer; }
   .collect-btn.active { background: #f59e0b; color: white; }
+  .cnn-btn { margin: 8px; padding: 12px 24px; border: 2px solid #8b5cf6; background: transparent;
+             color: #8b5cf6; border-radius: 8px; font-size: 1em; cursor: pointer; }
+  .cnn-btn.active { background: #8b5cf6; color: white; animation: pulse 1.5s infinite; }
   .record-btn { margin: 8px; padding: 12px 24px; border: 2px solid #ef4444; background: transparent;
                 color: #ef4444; border-radius: 8px; font-size: 1em; cursor: pointer; }
   .record-btn.active { background: #ef4444; color: white; animation: pulse 1s infinite; }
@@ -209,6 +214,7 @@ HTML = """<!DOCTYPE html>
 
 <button class="explore-btn" id="exploreBtn" onclick="toggleExplore()">🔍 Explore</button>
 <button class="collect-btn" id="collectBtn" onclick="toggleCollectAndRecord()">📊 Collect + Record</button>
+<button class="cnn-btn" id="cnnBtn" onclick="toggleCNN()">🧠 CNN Drive</button>
 <button class="detect-btn" id="detectBtn" onclick="toggleDetect()">👁️ Detect</button>
 <button class="record-btn" id="recordBtn" onclick="toggleRecord()">🔴 Record Only</button>
 <div id="recordInfo" style="color:#ef4444; font-size:0.9em; display:none;">Recording: <span id="frameCount">0</span> frames</div>
@@ -442,6 +448,50 @@ fetch('/api/collect/status').then(r => r.json()).then(data => {
   }
 }).catch(() => {});
 
+// CNN Drive
+let cnnActive = false;
+let cnnStatusTimer = null;
+function toggleCNN() {
+  if (!cnnActive) {
+    fetch('/api/cnn/start', {method: 'POST'}).then(r => r.json()).then(() => {
+      cnnActive = true;
+      document.getElementById('cnnBtn').classList.add('active');
+      document.getElementById('cnnBtn').textContent = '🛑 Stop CNN';
+      document.getElementById('depthContainer').style.display = 'flex';
+      depthTimer = setInterval(updateDepth, 300);
+      cnnStatusTimer = setInterval(updateCNNStatus, 500);
+    });
+  } else {
+    fetch('/api/cnn/stop', {method: 'POST'}).then(r => r.json()).then(() => {
+      cnnActive = false;
+      document.getElementById('cnnBtn').classList.remove('active');
+      document.getElementById('cnnBtn').textContent = '🧠 CNN Drive';
+      document.getElementById('depthContainer').style.display = 'none';
+      clearInterval(depthTimer);
+      clearInterval(cnnStatusTimer);
+    });
+  }
+}
+function updateCNNStatus() {
+  fetch('/api/cnn/status').then(r => r.json()).then(data => {
+    if (data.stats) {
+      const s = data.stats;
+      document.getElementById('frameCount').textContent =
+        s.inferences + ' inf · steer=' + s.last_steer + ' thr=' + s.last_throttle + ' · ' + Math.round(s.avg_ms) + 'ms';
+      updatePath(s.last_steer || 0, s.last_throttle || 0);
+    }
+  }).catch(() => {});
+}
+// Sync CNN state on load
+fetch('/api/cnn/status').then(r => r.json()).then(data => {
+  if (data.running) {
+    cnnActive = true;
+    document.getElementById('cnnBtn').classList.add('active');
+    document.getElementById('cnnBtn').textContent = '🛑 Stop CNN';
+    cnnStatusTimer = setInterval(updateCNNStatus, 500);
+  }
+}).catch(() => {});
+
 function sendTTS() {
   const input = document.getElementById('ttsInput');
   const text = input.value.trim();
@@ -628,6 +678,27 @@ async def api_collect_stop():
 async def api_collect_status():
     return {"running": collect_driver.is_running if collect_driver else False}
 
+@app.post("/api/cnn/start")
+async def api_cnn_start():
+    if cnn_driver and not cnn_driver.is_running:
+        await cnn_driver.start()
+        return {"status": "started"}
+    return {"status": "already_running" if cnn_driver and cnn_driver.is_running else "no_driver"}
+
+@app.post("/api/cnn/stop")
+async def api_cnn_stop():
+    if cnn_driver and cnn_driver.is_running:
+        await cnn_driver.stop()
+        return {"status": "stopped"}
+    return {"status": "not_running"}
+
+@app.get("/api/cnn/status")
+async def api_cnn_status():
+    return {
+        "running": cnn_driver.is_running if cnn_driver else False,
+        "stats": cnn_driver.stats if cnn_driver else {},
+    }
+
 
 @app.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket):
@@ -681,7 +752,7 @@ loop = None
 
 
 def main():
-    global loop, collect_driver
+    global loop, collect_driver, cnn_driver
     import uvicorn
 
     mqtt_client.connect(MQTT_BROKER, MQTT_PORT, 60)
@@ -689,6 +760,7 @@ def main():
     log.info("MQTT connected to %s:%d", MQTT_BROKER, MQTT_PORT)
 
     collect_driver = CollectDriver(mqtt_client)
+    cnn_driver = CNNDriver(mqtt_client)
 
     loop = asyncio.new_event_loop()
 
