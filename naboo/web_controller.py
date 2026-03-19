@@ -52,11 +52,14 @@ def _ha_tts(text: str):
     except Exception as e:
         log.error("TTS error: %s", e)
 
+from naboo.collect_drive import CollectDriver
+
 # ── MQTT ──────────────────────────────────────────────────────────────────────
 
 mqtt_client = mqtt.Client(client_id="naboo-web-controller", protocol=mqtt.MQTTv5)
 telemetry_data = {"d": 0, "b": 0, "dm": 0, "h": 0}
 ws_clients: list[WebSocket] = []
+collect_driver = None  # type: CollectDriver
 
 
 def on_connect(client, userdata, flags, reason_code, properties):
@@ -70,6 +73,9 @@ def on_message(client, userdata, msg):
     try:
         if msg.topic == "mbot2/telemetry":
             telemetry_data = json.loads(msg.payload.decode())
+            # Forward to collect driver
+            if collect_driver:
+                collect_driver.on_telemetry(telemetry_data)
             # Broadcast to all WebSocket clients
             for ws in ws_clients[:]:
                 try:
@@ -80,6 +86,8 @@ def on_message(client, userdata, msg):
                 except Exception:
                     pass
         elif msg.topic == "mbot2/collision":
+            if collect_driver:
+                collect_driver.on_collision()
             for ws in ws_clients[:]:
                 try:
                     asyncio.run_coroutine_threadsafe(
@@ -155,6 +163,9 @@ HTML = """<!DOCTYPE html>
   .detect-btn { margin: 8px; padding: 12px 24px; border: 2px solid #22c55e; background: transparent;
                 color: #22c55e; border-radius: 8px; font-size: 1em; cursor: pointer; }
   .detect-btn.active { background: #22c55e; color: white; }
+  .collect-btn { margin: 8px; padding: 12px 24px; border: 2px solid #f59e0b; background: transparent;
+                 color: #f59e0b; border-radius: 8px; font-size: 1em; cursor: pointer; }
+  .collect-btn.active { background: #f59e0b; color: white; }
   .record-btn { margin: 8px; padding: 12px 24px; border: 2px solid #ef4444; background: transparent;
                 color: #ef4444; border-radius: 8px; font-size: 1em; cursor: pointer; }
   .record-btn.active { background: #ef4444; color: white; animation: pulse 1s infinite; }
@@ -195,6 +206,7 @@ HTML = """<!DOCTYPE html>
 </div>
 
 <button class="explore-btn" id="exploreBtn" onclick="toggleExplore()">🔍 Explore</button>
+<button class="collect-btn" id="collectBtn" onclick="toggleCollect()">📊 Collect</button>
 <button class="detect-btn" id="detectBtn" onclick="toggleDetect()">👁️ Detect</button>
 <button class="record-btn" id="recordBtn" onclick="toggleRecord()">🔴 Record</button>
 <div id="recordInfo" style="color:#ef4444; font-size:0.9em; display:none;">Recording: <span id="frameCount">0</span> frames</div>
@@ -298,6 +310,15 @@ function toggleExplore() {
   btn.classList.toggle('active', exploring);
   btn.textContent = exploring ? '🛑 Stop Explore' : '🔍 Explore';
   ws.send(JSON.stringify({cmd: exploring ? 'explore' : 'stop_explore'}));
+}
+
+let collecting = false;
+function toggleCollect() {
+  collecting = !collecting;
+  const btn = document.getElementById('collectBtn');
+  btn.classList.toggle('active', collecting);
+  btn.textContent = collecting ? '🛑 Stop Collect' : '📊 Collect';
+  ws.send(JSON.stringify({cmd: collecting ? 'collect' : 'stop_collect'}));
 }
 
 function sendTTS() {
@@ -487,6 +508,12 @@ async def websocket_endpoint(ws: WebSocket):
                     "user": "web-controller",
                     "conversation_id": f"web-{id(ws)}",
                 }))
+            elif cmd == "collect":
+                if collect_driver and not collect_driver.is_running:
+                    asyncio.ensure_future(collect_driver.start())
+            elif cmd == "stop_collect":
+                if collect_driver and collect_driver.is_running:
+                    asyncio.ensure_future(collect_driver.stop())
             elif cmd == "tts":
                 text = data.get("text", "")
                 if text:
@@ -509,12 +536,14 @@ loop = None
 
 
 def main():
-    global loop
+    global loop, collect_driver
     import uvicorn
 
     mqtt_client.connect(MQTT_BROKER, MQTT_PORT, 60)
     mqtt_client.loop_start()
     log.info("MQTT connected to %s:%d", MQTT_BROKER, MQTT_PORT)
+
+    collect_driver = CollectDriver(mqtt_client)
 
     loop = asyncio.new_event_loop()
 
