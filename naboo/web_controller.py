@@ -331,31 +331,29 @@ function toggleCollect() {
 
 function toggleCollectAndRecord() {
   if (!collecting) {
-    // Start both: record first, then collect
-    fetch(COLLECT_URL + '/record/start', {method: 'POST'}).then(r => r.json()).then(data => {
-      if (data.status === 'recording' || data.error === 'Already recording') {
-        isRecording = true;
-        document.getElementById('recordBtn').classList.add('active');
-        document.getElementById('recordBtn').textContent = '⏹ Stop Record';
-        document.getElementById('recordInfo').style.display = 'block';
-        document.getElementById('depthContainer').style.display = 'flex';
-        recordTimer = setInterval(updateRecordStatus, 500);
-        depthTimer = setInterval(updateDepth, 300);
-      }
-    }).then(() => {
+    // Start record, then collect via HTTP
+    fetch(COLLECT_URL + '/record/start', {method: 'POST'}).then(r => r.json()).then(() => {
+      isRecording = true;
+      document.getElementById('recordBtn').classList.add('active');
+      document.getElementById('recordBtn').textContent = '⏹ Stop Record';
+      document.getElementById('recordInfo').style.display = 'block';
+      document.getElementById('depthContainer').style.display = 'flex';
+      recordTimer = setInterval(updateRecordStatus, 500);
+      depthTimer = setInterval(updateDepth, 300);
+      return fetch('/api/collect/start', {method: 'POST'});
+    }).then(r => r.json()).then(() => {
       collecting = true;
-      const btn = document.getElementById('collectBtn');
-      btn.classList.add('active');
-      btn.textContent = '🛑 Stop';
-      ws.send(JSON.stringify({cmd: 'collect'}));
-    });
+      document.getElementById('collectBtn').classList.add('active');
+      document.getElementById('collectBtn').textContent = '🛑 Stop';
+    }).catch(e => console.error('Start error:', e));
   } else {
-    // Stop both: collect first, then record
-    ws.send(JSON.stringify({cmd: 'stop_collect'}));
-    collecting = false;
-    document.getElementById('collectBtn').classList.remove('active');
-    document.getElementById('collectBtn').textContent = '📊 Collect + Record';
-    fetch(COLLECT_URL + '/record/stop', {method: 'POST'}).then(r => r.json()).then(data => {
+    // Stop collect, then record via HTTP
+    fetch('/api/collect/stop', {method: 'POST'}).then(r => r.json()).then(() => {
+      collecting = false;
+      document.getElementById('collectBtn').classList.remove('active');
+      document.getElementById('collectBtn').textContent = '📊 Collect + Record';
+      return fetch(COLLECT_URL + '/record/stop', {method: 'POST'});
+    }).then(r => r.json()).then(data => {
       isRecording = false;
       document.getElementById('recordBtn').classList.remove('active');
       document.getElementById('recordBtn').textContent = '🔴 Record Only';
@@ -364,9 +362,18 @@ function toggleCollectAndRecord() {
       clearInterval(recordTimer);
       clearInterval(depthTimer);
       if (data.frames) alert('Saved ' + data.frames + ' frames (' + data.size_mb + 'MB)');
-    });
+    }).catch(e => console.error('Stop error:', e));
   }
 }
+
+// Sync collect+record state on page load
+fetch('/api/collect/status').then(r => r.json()).then(data => {
+  if (data.running) {
+    collecting = true;
+    document.getElementById('collectBtn').classList.add('active');
+    document.getElementById('collectBtn').textContent = '🛑 Stop';
+  }
+}).catch(() => {});
 
 function sendTTS() {
   const input = document.getElementById('ttsInput');
@@ -529,6 +536,25 @@ ws.send = function(data) {
 @app.get("/", response_class=HTMLResponse)
 async def index():
     return HTML
+
+
+@app.post("/api/collect/start")
+async def api_collect_start():
+    if collect_driver and not collect_driver.is_running:
+        await collect_driver.start()
+        return {"status": "started"}
+    return {"status": "already_running" if collect_driver and collect_driver.is_running else "no_driver"}
+
+@app.post("/api/collect/stop")
+async def api_collect_stop():
+    if collect_driver and collect_driver.is_running:
+        await collect_driver.stop()
+        return {"status": "stopped"}
+    return {"status": "not_running"}
+
+@app.get("/api/collect/status")
+async def api_collect_status():
+    return {"running": collect_driver.is_running if collect_driver else False}
 
 
 @app.websocket("/ws")
