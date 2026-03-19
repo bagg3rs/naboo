@@ -17,6 +17,7 @@ import time
 import httpx
 import numpy as np
 import torch
+from prometheus_client import Counter, Gauge, Histogram
 
 log = logging.getLogger("naboo.cnn_drive")
 
@@ -28,6 +29,16 @@ SPEED_SCALE = 30  # Max motor speed
 TURN_SPEED = 25
 MIN_THROTTLE = 0.15  # Below this = stop
 INFERENCE_HZ = 4  # Target inference rate
+
+# Prometheus metrics
+cnn_inferences = Counter("naboo_cnn_inferences_total", "Total CNN inferences")
+cnn_inference_ms = Histogram("naboo_cnn_inference_ms", "CNN inference time ms",
+                              buckets=[1, 2, 5, 10, 20, 50])
+cnn_steering = Gauge("naboo_cnn_steering", "CNN predicted steering")
+cnn_throttle = Gauge("naboo_cnn_throttle", "CNN predicted throttle")
+cnn_active = Gauge("naboo_cnn_active", "CNN drive active")
+cnn_motor_cmd = Counter("naboo_cnn_motor_commands_total", "CNN motor commands", ["action"])
+cnn_stops = Counter("naboo_cnn_stops_total", "CNN stop decisions (throttle below threshold)")
 
 
 class CNNDriver:
@@ -73,6 +84,7 @@ class CNNDriver:
         self._window = []
         self._stats = {"inferences": 0, "avg_ms": 0, "last_steer": 0, "last_throttle": 0}
         self._task = asyncio.create_task(self._loop())
+        cnn_active.set(1)
         log.info("🧠 CNN navigation started")
 
     async def stop(self):
@@ -86,6 +98,7 @@ class CNNDriver:
             except asyncio.CancelledError:
                 pass
         self._motor("stop", 0)
+        cnn_active.set(0)
         log.info("🛑 CNN navigation stopped (inferences: %d, avg: %.0fms)",
                  self._stats["inferences"], self._stats["avg_ms"])
 
@@ -152,25 +165,31 @@ class CNNDriver:
                 # Run inference
                 steer, throttle, ms = self._predict(self._window)
 
-                # Update stats
+                # Update stats + metrics
                 n = self._stats["inferences"]
                 self._stats["avg_ms"] = (self._stats["avg_ms"] * n + ms) / (n + 1)
                 self._stats["inferences"] = n + 1
                 self._stats["last_steer"] = round(steer, 2)
                 self._stats["last_throttle"] = round(throttle, 2)
 
+                cnn_inferences.inc()
+                cnn_inference_ms.observe(ms)
+                cnn_steering.set(steer)
+                cnn_throttle.set(throttle)
+
                 # Convert to motor commands
                 if throttle < MIN_THROTTLE:
                     self._motor("stop", 0)
+                    cnn_stops.inc()
                 elif abs(steer) > 0.3:
-                    # Turn — direction based on sign
                     cmd = "turn_left" if steer < 0 else "turn_right"
                     speed = int(TURN_SPEED * min(abs(steer), 1.0))
                     self._motor(cmd, max(speed, 15))
+                    cnn_motor_cmd.labels(action=cmd).inc()
                 else:
-                    # Go forward
                     speed = int(SPEED_SCALE * throttle)
                     self._motor("move_forward", max(speed, 15))
+                    cnn_motor_cmd.labels(action="forward").inc()
 
                 if self._stats["inferences"] % 20 == 0:
                     log.info("🧠 CNN: steer=%.2f throttle=%.2f (%.0fms)",

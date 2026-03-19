@@ -13,7 +13,8 @@ import threading
 
 import paho.mqtt.client as mqtt
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse
+from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
 
 log = logging.getLogger("naboo.web_controller")
 
@@ -698,6 +699,10 @@ async def api_cnn_status():
         "running": cnn_driver.is_running if cnn_driver else False,
         "stats": cnn_driver.stats if cnn_driver else {},
     }
+
+@app.get("/metrics")
+async def metrics():
+    return PlainTextResponse(generate_latest().decode(), media_type=CONTENT_TYPE_LATEST)
 
 
 @app.websocket("/ws")
