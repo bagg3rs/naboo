@@ -5,7 +5,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=pi
+User=delphi
 WorkingDirectory=/opt/naboo-cam
 ExecStart=/usr/bin/python3 /opt/naboo-cam/camera_server.py
 Restart=always
