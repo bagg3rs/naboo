@@ -91,12 +91,16 @@ class CNNDriver:
         if not self._running:
             return
         self._running = False
+        # Send stop immediately before waiting for task
+        self._motor("stop", 0)
+        self._motor("stop", 0)
         if self._task:
             self._task.cancel()
             try:
                 await self._task
             except asyncio.CancelledError:
                 pass
+        # Send stop again after task is dead
         self._motor("stop", 0)
         cnn_active.set(0)
         log.info("🛑 CNN navigation stopped (inferences: %d, avg: %.0fms)",
