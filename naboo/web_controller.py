@@ -79,6 +79,8 @@ def on_message(client, userdata, msg):
             # Forward to collect driver
             if collect_driver:
                 collect_driver.on_telemetry(telemetry_data)
+                if cnn_driver:
+                    cnn_driver.on_telemetry(telemetry_data)
             # Broadcast to all WebSocket clients
             for ws in ws_clients[:]:
                 try:

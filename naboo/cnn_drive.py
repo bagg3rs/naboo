@@ -29,6 +29,8 @@ SPEED_SCALE = 50  # Max motor speed
 TURN_SPEED = 35
 MIN_THROTTLE = 0.10  # Below this = stop
 INFERENCE_HZ = 4  # Target inference rate
+EMERGENCY_STOP_CM = 10  # Hard ultrasonic override — stop no matter what CNN says
+CAUTION_CM = 20  # Force a turn if ultrasonic reads closer than this
 
 # Prometheus metrics
 cnn_inferences = Counter("naboo_cnn_inferences_total", "Total CNN inferences")
@@ -51,6 +53,7 @@ class CNNDriver:
         self._model = None
         self._device = "mps" if torch.backends.mps.is_available() else "cpu"
         self._window = []  # Last N depth frames
+        self._ultrasonic_cm = 999  # Latest ultrasonic reading
         self._stats = {"inferences": 0, "avg_ms": 0, "last_steer": 0, "last_throttle": 0}
 
         # Find latest model if not specified
@@ -109,6 +112,12 @@ class CNNDriver:
     @property
     def is_running(self):
         return self._running
+
+    def on_telemetry(self, data):
+        """Update ultrasonic reading from mBot2 telemetry."""
+        d = data.get("d", 999)
+        if d is not None and d < 500:
+            self._ultrasonic_cm = d
 
     @property
     def stats(self):
@@ -181,8 +190,22 @@ class CNNDriver:
                 cnn_steering.set(steer)
                 cnn_throttle.set(throttle)
 
-                # Convert to motor commands
-                if throttle < MIN_THROTTLE:
+                # Safety override: ultrasonic hard limits
+                dist = self._ultrasonic_cm
+                if dist < EMERGENCY_STOP_CM:
+                    self._motor("stop", 0)
+                    cnn_stops.inc()
+                    if self._stats["inferences"] % 10 == 0:
+                        log.info("🛑 Emergency stop: %dcm", dist)
+                elif dist < CAUTION_CM and abs(steer) < 0.3:
+                    # Too close and CNN says go straight — force a turn
+                    cmd = "turn_left" if self._stats["inferences"] % 2 == 0 else "turn_right"
+                    self._motor(cmd, TURN_SPEED)
+                    cnn_motor_cmd.labels(action=cmd).inc()
+                    if self._stats["inferences"] % 10 == 0:
+                        log.info("⚠️ Caution override: %dcm, forcing turn", dist)
+                # Normal CNN control
+                elif throttle < MIN_THROTTLE:
                     self._motor("stop", 0)
                     cnn_stops.inc()
                 elif abs(steer) > 0.3:
