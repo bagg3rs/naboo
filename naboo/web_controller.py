@@ -137,14 +137,26 @@ HTML = """<!DOCTYPE html>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { background: #1a1a2e; color: #e0e0e0; font-family: system-ui, sans-serif;
-         display: flex; flex-direction: column; align-items: center; min-height: 100vh; padding: 10px; }
-  h1 { color: #a855f7; margin: 8px 0; font-size: 1.4em; }
-  .video-container { position: relative; width: 100%; max-width: 720px;
+         min-height: 100vh; padding: 10px; }
+  h1 { color: #a855f7; margin: 8px 0; font-size: 1.4em; text-align: center; }
+
+  /* Desktop: side-by-side layout */
+  .main-layout { display: flex; gap: 16px; max-width: 1200px; margin: 0 auto; }
+  .left-panel { flex: 1; min-width: 0; }
+  .right-panel { width: 320px; flex-shrink: 0; display: flex; flex-direction: column; gap: 8px; }
+
+  /* Mobile: stack vertically */
+  @media (max-width: 800px) {
+    .main-layout { flex-direction: column; align-items: center; }
+    .right-panel { width: 100%; max-width: 640px; }
+  }
+
+  .video-container { position: relative; width: 100%;
                      border: 2px solid #a855f7; border-radius: 8px; overflow: hidden; }
   .video-container img { width: 100%; height: auto; display: block; }
   .controls { display: grid; grid-template-areas: ". up ." "left stop right" ". down .";
-              gap: 8px; margin: 12px 0; }
-  .btn { width: 70px; height: 70px; border: none; border-radius: 12px; font-size: 28px;
+              gap: 6px; justify-content: center; }
+  .btn { width: 60px; height: 60px; border: none; border-radius: 12px; font-size: 24px;
          cursor: pointer; background: #16213e; color: #e0e0e0; transition: all 0.1s;
          display: flex; align-items: center; justify-content: center; user-select: none;
          -webkit-user-select: none; touch-action: manipulation; }
@@ -155,94 +167,97 @@ HTML = """<!DOCTYPE html>
   .btn-right { grid-area: right; }
   .btn-stop { grid-area: stop; background: #dc2626; }
   .btn-stop:active, .btn-stop.active { background: #ef4444; }
-  .telemetry { display: flex; gap: 20px; margin: 10px 0; font-size: 1.1em; }
-  .telemetry span { padding: 6px 12px; background: #16213e; border-radius: 8px; }
-  .status { font-size: 0.9em; color: #888; margin-top: 8px; }
+  .telemetry { display: flex; gap: 8px; flex-wrap: wrap; font-size: 0.9em; }
+  .telemetry span { padding: 4px 8px; background: #16213e; border-radius: 6px; }
+  .status { font-size: 0.85em; color: #888; text-align: center; }
   .collision { animation: flash 0.3s ease-in-out 3; }
   @keyframes flash { 50% { border-color: #dc2626; } }
-  .explore-btn { margin: 8px; padding: 12px 24px; border: 2px solid #a855f7; background: transparent;
-                 color: #a855f7; border-radius: 8px; font-size: 1em; cursor: pointer; }
+  .mode-buttons { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+  .mode-buttons button { padding: 8px 16px; border-radius: 8px; font-size: 0.85em; cursor: pointer; }
+  .explore-btn { border: 2px solid #a855f7; background: transparent; color: #a855f7; }
   .explore-btn.active { background: #a855f7; color: white; }
-  .detect-btn { margin: 8px; padding: 12px 24px; border: 2px solid #22c55e; background: transparent;
-                color: #22c55e; border-radius: 8px; font-size: 1em; cursor: pointer; }
+  .detect-btn { border: 2px solid #22c55e; background: transparent; color: #22c55e; }
   .detect-btn.active { background: #22c55e; color: white; }
-  .collect-btn { margin: 8px; padding: 12px 24px; border: 2px solid #f59e0b; background: transparent;
-                 color: #f59e0b; border-radius: 8px; font-size: 1em; cursor: pointer; }
+  .collect-btn { border: 2px solid #f59e0b; background: transparent; color: #f59e0b; }
   .collect-btn.active { background: #f59e0b; color: white; }
-  .cnn-btn { margin: 8px; padding: 12px 24px; border: 2px solid #8b5cf6; background: transparent;
-             color: #8b5cf6; border-radius: 8px; font-size: 1em; cursor: pointer; }
+  .cnn-btn { border: 2px solid #8b5cf6; background: transparent; color: #8b5cf6; }
   .cnn-btn.active { background: #8b5cf6; color: white; animation: pulse 1.5s infinite; }
-  .record-btn { margin: 8px; padding: 12px 24px; border: 2px solid #ef4444; background: transparent;
-                color: #ef4444; border-radius: 8px; font-size: 1em; cursor: pointer; }
+  .record-btn { border: 2px solid #ef4444; background: transparent; color: #ef4444; }
   .record-btn.active { background: #ef4444; color: white; animation: pulse 1s infinite; }
   @keyframes pulse { 50% { opacity: 0.7; } }
-  .depth-container { width: 100%; max-width: 720px; display: flex; gap: 8px; margin: 8px 0; }
-  .depth-container img { flex: 1; border-radius: 8px; border: 1px solid #333; }
+  .depth-container { display: flex; gap: 8px; }
+  .depth-container img { flex: 1; border-radius: 8px; border: 1px solid #333; max-height: 180px; }
   .detect-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
   .detect-label { position: absolute; background: rgba(34,197,94,0.85); color: #000; padding: 2px 6px;
                   font-size: 0.75em; font-weight: bold; border-radius: 3px; white-space: nowrap; }
   .detect-box { position: absolute; border: 2px solid #22c55e; border-radius: 2px; }
   .detect-info { position: absolute; bottom: 4px; right: 4px; background: rgba(0,0,0,0.7);
                  color: #22c55e; padding: 2px 8px; font-size: 0.75em; border-radius: 4px; }
-  .speed-row { display: flex; align-items: center; gap: 10px; margin: 8px 0; font-size: 0.95em; }
+  .speed-row { display: flex; align-items: center; gap: 8px; font-size: 0.85em; }
   .speed-row input[type=range] { flex: 1; accent-color: #a855f7; }
 </style>
 </head>
 <body>
 <h1>🤖 Naboo Controller</h1>
 
-<div class="video-container" id="videoBox">
-  <img id="camFeed" src="CAMERA_STREAM_URL" alt="Camera Feed" onerror="this.src='CAMERA_SNAPSHOT_URL'; setTimeout(()=>this.src='CAMERA_STREAM_URL',3000)">
-  <div class="detect-overlay" id="detectOverlay"></div>
+<div class="main-layout">
+<div class="left-panel">
+  <div class="video-container" id="videoBox">
+    <img id="camFeed" src="CAMERA_STREAM_URL" alt="Camera Feed" onerror="this.src='CAMERA_SNAPSHOT_URL'; setTimeout(()=>this.src='CAMERA_STREAM_URL',3000)">
+    <div class="detect-overlay" id="detectOverlay"></div>
+  </div>
+  <div class="depth-container" id="depthContainer" style="display:none;">
+    <img id="depthImg" alt="Depth Map" style="max-height:180px;">
+  </div>
+  <canvas id="pathCanvas" width="300" height="200" style="border:1px solid #333; border-radius:8px; background:#111; margin:8px 0; width:100%;"></canvas>
 </div>
 
-<div class="telemetry">
-  <span>📏 <span id="dist">--</span>cm</span>
-  <span>🔋 <span id="batt">--</span>%</span>
-  <span>🧭 <span id="heading">--</span>°</span>
-  <span>📐 <span id="tilt">--</span></span>
+<div class="right-panel">
+  <div class="telemetry">
+    <span>📏 <span id="dist">--</span>cm</span>
+    <span>🔋 <span id="batt">--</span>%</span>
+    <span>🧭 <span id="heading">--</span>°</span>
+    <span>📐 <span id="tilt">--</span></span>
+  </div>
+
+  <div class="controls">
+    <button class="btn btn-up" data-cmd="forward">▲</button>
+    <button class="btn btn-left" data-cmd="left">◄</button>
+    <button class="btn btn-stop" data-cmd="stop">■</button>
+    <button class="btn btn-right" data-cmd="right">►</button>
+    <button class="btn btn-down" data-cmd="backward">▼</button>
+  </div>
+
+  <div class="mode-buttons">
+    <button class="explore-btn" id="exploreBtn" onclick="toggleExplore()">🔍 Explore</button>
+    <button class="collect-btn" id="collectBtn" onclick="toggleCollectAndRecord()">📊 Collect</button>
+    <button class="cnn-btn" id="cnnBtn" onclick="toggleCNN()">🧠 CNN</button>
+    <button class="detect-btn" id="detectBtn" onclick="toggleDetect()">👁️ Detect</button>
+    <button class="record-btn" id="recordBtn" onclick="toggleRecord()">🔴 Record</button>
+  </div>
+  <div id="recordInfo" style="color:#ef4444; font-size:0.85em; display:none; text-align:center;">Recording: <span id="frameCount">0</span> frames</div>
+
+  <div class="speed-row">
+    <span>🏎️</span>
+    <input type="range" id="speedSlider" min="15" max="60" value="35" oninput="document.getElementById('speedVal').textContent=this.value">
+    <span id="speedVal" style="min-width:2em; text-align:center;">35</span>
+  </div>
+  <div class="speed-row">
+    <span>🔄</span>
+    <input type="range" id="turnSlider" min="10" max="40" value="20" oninput="document.getElementById('turnVal').textContent=this.value">
+    <span id="turnVal" style="min-width:2em; text-align:center;">20</span>
+  </div>
+
+  <div style="display:flex; gap:6px;">
+    <input type="text" id="ttsInput" placeholder="Type to speak..." 
+           style="flex:1; padding:8px; border-radius:8px; border:1px solid #a855f7; background:#16213e; color:#e0e0e0; font-size:0.9em;"
+           onkeydown="if(event.key==='Enter')sendTTS()">
+    <button onclick="sendTTS()" style="padding:8px 12px; border-radius:8px; border:none; background:#a855f7; color:white; font-size:0.9em; cursor:pointer;">🔊</button>
+  </div>
+
+  <div class="status" id="status">Connecting...</div>
 </div>
-
-<canvas id="pathCanvas" width="300" height="300" style="border:1px solid #333; border-radius:8px; background:#111; margin:8px 0;"></canvas>
-
-<div class="controls">
-  <button class="btn btn-up" data-cmd="forward">▲</button>
-  <button class="btn btn-left" data-cmd="left">◄</button>
-  <button class="btn btn-stop" data-cmd="stop">■</button>
-  <button class="btn btn-right" data-cmd="right">►</button>
-  <button class="btn btn-down" data-cmd="backward">▼</button>
 </div>
-
-<button class="explore-btn" id="exploreBtn" onclick="toggleExplore()">🔍 Explore</button>
-<button class="collect-btn" id="collectBtn" onclick="toggleCollectAndRecord()">📊 Collect + Record</button>
-<button class="cnn-btn" id="cnnBtn" onclick="toggleCNN()">🧠 CNN Drive</button>
-<button class="detect-btn" id="detectBtn" onclick="toggleDetect()">👁️ Detect</button>
-<button class="record-btn" id="recordBtn" onclick="toggleRecord()">🔴 Record Only</button>
-<div id="recordInfo" style="color:#ef4444; font-size:0.9em; display:none;">Recording: <span id="frameCount">0</span> frames</div>
-
-<div class="depth-container" id="depthContainer" style="display:none;">
-  <img id="depthImg" alt="Depth Map" style="max-height:200px;">
-</div>
-
-<div class="speed-row" style="width:100%; max-width:640px;">
-  <span>🏎️ Drive</span>
-  <input type="range" id="speedSlider" min="15" max="60" value="35" oninput="document.getElementById('speedVal').textContent=this.value">
-  <span id="speedVal" style="min-width:2em; text-align:center;">35</span>
-</div>
-<div class="speed-row" style="width:100%; max-width:640px;">
-  <span>🔄 Turn</span>
-  <input type="range" id="turnSlider" min="10" max="40" value="20" oninput="document.getElementById('turnVal').textContent=this.value">
-  <span id="turnVal" style="min-width:2em; text-align:center;">20</span>
-</div>
-
-<div style="display:flex; gap:8px; margin:10px 0; width:100%; max-width:640px;">
-  <input type="text" id="ttsInput" placeholder="Type to speak..." 
-         style="flex:1; padding:10px; border-radius:8px; border:1px solid #a855f7; background:#16213e; color:#e0e0e0; font-size:1em;"
-         onkeydown="if(event.key==='Enter')sendTTS()">
-  <button onclick="sendTTS()" style="padding:10px 16px; border-radius:8px; border:none; background:#a855f7; color:white; font-size:1em; cursor:pointer;">🔊</button>
-</div>
-
-<div class="status" id="status">Connecting...</div>
 
 <script>
 let ws;
