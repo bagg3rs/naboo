@@ -15,7 +15,7 @@ except ImportError:
 
 # Config
 WIFI_SSID = "internetoftings"
-WIFI_PASS = "CHANGEME"
+WIFI_PASS = "CHANGEME"  # Set your WiFi password here
 MQTT_HOST = "192.168.0.50"
 MQTT_PORT = 1883
 
