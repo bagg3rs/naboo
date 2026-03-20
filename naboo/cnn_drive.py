@@ -25,9 +25,9 @@ log = logging.getLogger("naboo.cnn_drive")
 from naboo.train_tinynav import TinyNavCNN, WINDOW_SIZE, DEPTH_SIZE
 
 COLLECT_URL = os.environ.get("COLLECT_URL", "http://localhost:8082")
-SPEED_SCALE = 30  # Max motor speed
-TURN_SPEED = 25
-MIN_THROTTLE = 0.15  # Below this = stop
+SPEED_SCALE = 50  # Max motor speed
+TURN_SPEED = 35
+MIN_THROTTLE = 0.10  # Below this = stop
 INFERENCE_HZ = 4  # Target inference rate
 
 # Prometheus metrics
@@ -188,7 +188,7 @@ class CNNDriver:
                     cnn_motor_cmd.labels(action=cmd).inc()
                 else:
                     speed = int(SPEED_SCALE * throttle)
-                    self._motor("move_forward", max(speed, 15))
+                    self._motor("force_forward", max(speed, 15))
                     cnn_motor_cmd.labels(action="forward").inc()
 
                 if self._stats["inferences"] % 20 == 0:
