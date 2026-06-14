@@ -5,6 +5,7 @@ Run with:
 
 import os
 import sys
+import tempfile
 from pathlib import Path
 
 # ── Load .env early so NABOO_OTEL_ENABLED is known before OTel initialises ──
@@ -63,7 +64,10 @@ import signal
 
 from naboo.agent import NabooAgent
 
-PIDFILE = Path("/tmp/naboo-agent.pid")
+# Security fix: Use XDG_RUNTIME_DIR or a secure temp directory scoped to the user
+# to prevent cross-user PID spoofing and symlink attacks in shared /tmp.
+_runtime_dir = os.environ.get('XDG_RUNTIME_DIR', tempfile.gettempdir())
+PIDFILE = Path(_runtime_dir) / f"naboo-agent-{os.getuid()}.pid"
 
 
 def _kill_existing():
@@ -74,8 +78,8 @@ def _kill_existing():
             if old_pid != os.getpid():
                 os.kill(old_pid, signal.SIGTERM)
                 import time; time.sleep(1)  # give it a moment to exit
-        except (ProcessLookupError, ValueError):
-            pass  # already gone
+        except (ProcessLookupError, ValueError, PermissionError):
+            pass  # already gone or no permission
         PIDFILE.unlink(missing_ok=True)
 
 
