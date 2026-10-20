@@ -1,0 +1,28 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
+        with:
+          python-version: "3.12"
+      # --frozen installs exactly what uv.lock pins, which is what Dependabot
+      # PRs change. Not --locked: uv.lock is currently out of date with
+      # pyproject.toml (fastapi/uvicorn were added without re-locking), so a
+      # lock-freshness check would fail on main today.
+      - name: Install dependencies from uv.lock
+        run: uv sync --frozen
+      - name: Byte-compile all Python sources
+        run: uv run --frozen python -m compileall -q naboo scripts infra pi-camera firmware
+      - name: Import every naboo module (hardware/ML-only modules skipped)
+        run: uv run --frozen python scripts/ci_import_check.py
