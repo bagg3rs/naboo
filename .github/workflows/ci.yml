@@ -13,7 +13,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10
+      # setup-uv publishes no floating major tag, so pin the full version.
+      - uses: astral-sh/setup-uv@v10.3.0
         with:
           python-version: "3.12"
       # --frozen installs exactly what uv.lock pins, which is what Dependabot
